@@ -4,15 +4,26 @@ import { supabase } from './supabase';
 export async function generateOrderCode(): Promise<string> {
   let code = '';
   let isUnique = false;
+  let attempts = 0;
 
-  while (!isUnique) {
+  while (!isUnique && attempts < 10) {
+    attempts++;
     code = Math.floor(1000000 + Math.random() * 9000000).toString();
-    const { data } = await supabase
+    
+    const { data, error } = await supabase
       .from('orders')
       .select('order_code')
       .eq('order_code', code)
       .maybeSingle();
-    if (!data) isUnique = true;
+    
+    // نعتبره فريد فقط إذا لم يحدث خطأ في الطلب، ولم يتم العثور على كود مطابق
+    if (!error && !data) {
+      isUnique = true;
+    }
+  }
+
+  if (!isUnique) {
+    throw new Error('فشل في توليد كود فريد للأوردر، يرجى المحاولة مرة أخرى.');
   }
 
   return code;
@@ -58,7 +69,6 @@ export async function createOrder(order: {
   notes: string;
   status: string;
 }) {
-  // First, find or create customer
   let customerId: string | null = null;
 
   const { data: existingCustomer } = await supabase
@@ -99,6 +109,26 @@ export async function updateOrder(id: string, updates: Record<string, unknown>) 
 }
 
 export async function deleteOrder(id: string) {
+  // جلب الصور المرتبطة بالأوردر لمسحها من الـ Storage أولاً
+  const { data: images } = await supabase
+    .from('order_images')
+    .select('image_url')
+    .eq('order_id', id);
+
+  if (images && images.length > 0) {
+    for (const img of images) {
+      try {
+        const urlParts = img.image_url.split('/order-images/');
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1];
+          await supabase.storage.from('order-images').remove([filePath]);
+        }
+      } catch (e) {
+        console.error('فشل مسح ملف الصورة من الـ Storage:', e);
+      }
+    }
+  }
+
   const { error } = await supabase
     .from('orders')
     .delete()
@@ -131,6 +161,23 @@ export async function uploadOrderImage(orderId: string, file: File) {
 }
 
 export async function deleteOrderImage(id: string) {
+  // جلب رابط الصورة لمعرفة مسار الملف في الـ Storage
+  const { data: imgData } = await supabase
+    .from('order_images')
+    .select('image_url')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (imgData) {
+    const urlParts = imgData.image_url.split('/order-images/');
+    if (urlParts.length > 1) {
+      const filePath = urlParts[1];
+      // حذف الملف الفعلي من الـ Storage
+      await supabase.storage.from('order-images').remove([filePath]);
+    }
+  }
+
+  // حذف السجل من جدول الداتا بيز
   const { error } = await supabase
     .from('order_images')
     .delete()
