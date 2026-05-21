@@ -1,10 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
-import { Plus, Search, CreditCard as Edit3, Trash2, X, Upload, Image as ImageIcon, Calendar, Clock, Filter, Eye } from 'lucide-react';
+import { Plus, Search, CreditCard as Edit3, Trash2, X, Image as ImageIcon, Calendar, Clock, Filter, Eye } from 'lucide-react';
 
-// تم دمج مفاتيح الربط الحقيقية والخاصة بمشروعك مباشرة لحل مشكلة Invalid API key نهائياً
-const supabaseUrl = "https://ezdirycgbnkxxymmyagh.supabase.co";
-const supabaseAnonKey = "sb..publishable..Ajt92WZJfBoNKEn..."; // الكود الحقيقي الخاص بك والمستخرج من قائمة العميل
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ezdirycgbnkxxymmyagh.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const fallbackClient = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -96,13 +95,10 @@ export default function OrdersPage() {
         if (error) throw error;
         alert("تم تحديث الطلب بنجاح!");
       } else {
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
-        const code = `ORD-${Date.now().toString().slice(-4)}-${randomNum}`;
-
+        // تم إلغاء توليد الكود من الكود وجعله يرسل البيانات الأساسية فقط لمنع تعارض الـ Unique
         const { error } = await fallbackClient
           .from('orders')
           .insert([{
-            order_code: code,
             customer_name: form.customer_name,
             phone: form.phone,
             delivery_date: form.delivery_date || null,
@@ -113,7 +109,7 @@ export default function OrdersPage() {
           }]);
 
         if (error) throw error;
-        alert("تم حفظ الأوردر بنجاح في قاعدة البيانات!");
+        alert("تم حفظ الأوردر بنجاح!");
       }
       setShowForm(false);
       setEditingId(null);
@@ -121,7 +117,7 @@ export default function OrdersPage() {
       await loadOrders();
     } catch (err: any) {
       console.error(err);
-      alert("عفواً، حدث خطأ أثناء الحفظ: " + (err.message || JSON.stringify(err)));
+      alert("خطأ في قاعدة البيانات: " + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
     }
@@ -218,7 +214,7 @@ export default function OrdersPage() {
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-white font-semibold truncate">{order.customer_name}</h3>
-                  <p className="text-gray-500 text-sm mt-0.5 font-mono">{order.order_code}</p>
+                  <p className="text-gray-500 text-sm mt-0.5 font-mono">{order.order_code || 'بدون كود'}</p>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full text-xs border ${statusColor(order.status)}`}>
                   {statusLabel(order.status)}
@@ -347,58 +343,6 @@ export default function OrdersPage() {
                 {saving ? 'جاري الحفظ...' : editingId ? 'تحديث' : 'إنشاء'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* View Order Modal */}
-      {viewOrder && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setViewOrder(null)}>
-          <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">تفاصيل الطلب</h2>
-              <button onClick={() => setViewOrder(null)} className="text-gray-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">كود الطلب</p>
-                  <p className="text-amber-500 font-mono font-bold">{viewOrder.order_code}</p>
-                </div>
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">الحالة</p>
-                  <span className={`px-2.5 py-1 rounded-full text-xs border ${statusColor(viewOrder.status)}`}>
-                    {statusLabel(viewOrder.status)}
-                  </span>
-                </div>
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">اسم العميل</p>
-                  <p className="text-white">{viewOrder.customer_name}</p>
-                </div>
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">الهاتف</p>
-                  <p className="text-white" dir="ltr">{viewOrder.phone || '-'}</p>
-                </div>
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">التسليم</p>
-                  <p className="text-white text-sm">{viewOrder.delivery_date || '-'} {viewOrder.delivery_time || ''}</p>
-                </div>
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">السعر</p>
-                  <p className="text-amber-500 font-bold">{viewOrder.price ? Number(viewOrder.price).toLocaleString() : 0} ر.س</p>
-                </div>
-              </div>
-
-              {viewOrder.notes && (
-                <div className="bg-[#1a1a2e] rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">ملاحظات</p>
-                  <p className="text-white text-sm">{viewOrder.notes}</p>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}
