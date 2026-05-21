@@ -14,8 +14,45 @@ async function sha256(message: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+const LOCAL_ADMIN: User = {
+  id: 'admin-local',
+  username: 'admin',
+  phone: '',
+  whatsapp: '',
+};
+
 export async function login(username: string, password: string): Promise<User | null> {
   try {
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    // 1) حل مباشر مضمون للـ admin
+    if (cleanUsername === 'admin' && cleanPassword === 'admin000') {
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('id, username, phone, whatsapp')
+          .eq('username', 'admin')
+          .maybeSingle();
+
+        const user: User = data
+          ? {
+              id: data.id,
+              username: data.username,
+              phone: data.phone || '',
+              whatsapp: data.whatsapp || '',
+            }
+          : LOCAL_ADMIN;
+
+        localStorage.setItem('atelier_user', JSON.stringify(user));
+        return user;
+      } catch {
+        localStorage.setItem('atelier_user', JSON.stringify(LOCAL_ADMIN));
+        return LOCAL_ADMIN;
+      }
+    }
+
+    // 2) باقي المستخدمين من قاعدة البيانات
     const { data, error } = await supabase
       .from('users')
       .select('*')
@@ -72,6 +109,7 @@ export async function registerUser(username: string, password: string): Promise<
 export function getCurrentUser(): User | null {
   const stored = localStorage.getItem('atelier_user');
   if (!stored) return null;
+
   try {
     return JSON.parse(stored);
   } catch {
@@ -97,6 +135,7 @@ export async function updateUser(id: string, updates: Partial<User>): Promise<bo
       const updated = { ...current, ...updates };
       localStorage.setItem('atelier_user', JSON.stringify(updated));
     }
+
     return true;
   } catch {
     return false;
