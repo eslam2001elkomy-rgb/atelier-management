@@ -58,8 +58,9 @@ export default function OrdersPage() {
     try {
       const data = await fetchOrders();
       setOrders(data || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("فشل في جلب البيانات من السيرفر: " + (err.message || JSON.stringify(err)));
     } finally {
       setLoading(false);
     }
@@ -88,9 +89,10 @@ export default function OrdersPage() {
           notes: form.notes,
           status: form.status,
         });
+        alert("تم تحديث الطلب بنجاح!");
       } else {
         const code = await generateOrderCode();
-        await createOrder({
+        const result = await createOrder({
           order_code: code,
           customer_name: form.customer_name,
           phone: form.phone,
@@ -100,13 +102,21 @@ export default function OrdersPage() {
           notes: form.notes,
           status: form.status,
         });
+        
+        if (result) {
+          alert("تم حفظ الأوردر بنجاح في قاعدة البيانات!");
+        } else {
+          alert("تنبيه: تم إرسال الطلب ولكن لم يرجع السيرفر أي تأكيد للبيانات.");
+        }
       }
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm);
       await loadOrders();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      // الفخ هنا: الرسالة دي هتظهر لك على الشاشة فورًا وتكشف سبب رفض سوبابيز للحفظ
+      alert("عفواً، حدث خطأ أثناء الحفظ: " + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
     }
@@ -132,8 +142,9 @@ export default function OrdersPage() {
       await deleteOrder(id);
       await loadOrders();
       if (viewOrder?.id === id) setViewOrder(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("فشل الحذف: " + err.message);
     }
   };
 
@@ -149,8 +160,9 @@ export default function OrdersPage() {
         const found = refreshed?.find((o: any) => o.id === orderId);
         if (found) setViewOrder(found);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("فشل رفع الصورة: " + err.message);
     } finally {
       setUploading(false);
     }
@@ -165,8 +177,9 @@ export default function OrdersPage() {
         const found = refreshed?.find((o: any) => o.id === viewOrder.id);
         if (found) setViewOrder(found);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("فشل حذف الصورة: " + err.message);
     }
   };
 
@@ -272,7 +285,7 @@ export default function OrdersPage() {
               )}
 
               <div className="flex items-center justify-between pt-3 border-t border-gray-800">
-                <span className="text-amber-500 font-bold">{Number(order.price).toLocaleString()} <span className="text-xs text-gray-500">ر.س</span></span>
+                <span className="text-amber-500 font-bold">{order.price ? Number(order.price).toLocaleString() : 0} <span className="text-xs text-gray-500">ر.س</span></span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setViewOrder(order)} className="p-2 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-500/10 transition-all">
                     <Eye className="w-4 h-4" />
@@ -423,7 +436,7 @@ export default function OrdersPage() {
                 </div>
                 <div className="bg-[#1a1a2e] rounded-xl p-3">
                   <p className="text-gray-500 text-xs mb-1">السعر</p>
-                  <p className="text-amber-500 font-bold">{Number(viewOrder.price).toLocaleString()} ر.س</p>
+                  <p className="text-amber-500 font-bold">{viewOrder.price ? Number(viewOrder.price).toLocaleString() : 0} ر.س</p>
                 </div>
               </div>
 
