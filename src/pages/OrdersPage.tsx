@@ -22,6 +22,7 @@ interface OrderForm {
   price: string;
   notes: string;
   status: string;
+  image_url: string; // إضافة خانة الصورة في الفورم
 }
 
 const emptyForm: OrderForm = {
@@ -32,6 +33,7 @@ const emptyForm: OrderForm = {
   price: '',
   notes: '',
   status: 'pending',
+  image_url: '',
 };
 
 export default function OrdersPage() {
@@ -74,14 +76,14 @@ export default function OrdersPage() {
     return matchSearch && matchStatus;
   });
 
-  // دالة لتوليد كود فريد وعشوائي تماماً لإرضاء شرط الـ NOT NULL في الداتابيز
-  const generateUniqueOrderCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = 'ORD-';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+  // تحديث الدالة لتوليد 7 أرقام عشوائية فقط لتسهيل التتبع
+  const generateNumericOrderCode = () => {
+    let result = '';
+    const digits = '0123456789';
+    for (let i = 0; i < 7; i++) {
+      result += digits.charAt(Math.floor(Math.random() * digits.length));
     }
-    return code;
+    return result;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -99,14 +101,14 @@ export default function OrdersPage() {
             price: parseFloat(form.price) || 0,
             notes: form.notes,
             status: form.status,
+            image_url: form.image_url || null, // تحديث رابط الصورة
           })
           .eq('id', editingId);
 
         if (error) throw error;
         alert("تم تحديث الطلب بنجاح!");
       } else {
-        // نولد كود عشوائي ونرسله فوراً مع الطلب الجديد
-        const generatedCode = generateUniqueOrderCode();
+        const generatedCode = generateNumericOrderCode();
         
         const { error } = await fallbackClient
           .from('orders')
@@ -118,11 +120,12 @@ export default function OrdersPage() {
             price: parseFloat(form.price) || 0,
             notes: form.notes,
             status: form.status,
-            order_code: generatedCode // إرسال الكود إجبارياً هنا لحل المشكلة
+            order_code: generatedCode, // رقم التتبع المكون من 7 أرقام
+            image_url: form.image_url || null, // حفظ رابط الصورة
           }]);
 
         if (error) throw error;
-        alert("تم حفظ الأوردر بنجاح!");
+        alert("تم حفظ الأوردر بنجاح! رقم التتبع هو: " + generatedCode);
       }
       setShowForm(false);
       setEditingId(null);
@@ -146,6 +149,7 @@ export default function OrdersPage() {
       price: order.price?.toString() || '',
       notes: order.notes || '',
       status: order.status,
+      image_url: order.image_url || '',
     });
     setShowForm(true);
   };
@@ -227,12 +231,19 @@ export default function OrdersPage() {
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-white font-semibold truncate">{order.customer_name}</h3>
-                  <p className="text-gray-500 text-sm mt-0.5 font-mono">{order.order_code || 'بدون كود'}</p>
+                  <p className="text-amber-500 text-sm mt-0.5 font-mono font-bold">رقم التتبع: {order.order_code || 'بدون كود'}</p>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full text-xs border ${statusColor(order.status)}`}>
                   {statusLabel(order.status)}
                 </span>
               </div>
+
+              {/* عرض مصغر للصورة لو موجودة */}
+              {order.image_url && (
+                <div className="mb-3 rounded-xl overflow-hidden border border-gray-800 h-32 bg-black/20">
+                  <img src={order.image_url} alt="صورة الأوردر" className="w-full h-full object-cover" />
+                </div>
+              )}
 
               <div className="space-y-1.5 text-sm text-gray-400 mb-3">
                 {order.phone && <p>{order.phone}</p>}
@@ -339,6 +350,18 @@ export default function OrdersPage() {
                   ))}
                 </select>
               </div>
+              {/* إضافة خانة رابط الصورة */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">رابط صورة التصميم / الموديل</label>
+                <input
+                  type="url"
+                  value={form.image_url}
+                  onChange={e => setForm({ ...form, image_url: e.target.value })}
+                  placeholder="https://example.com/image.jpg"
+                  className="w-full bg-[#1a1a2e] border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500/50"
+                  dir="ltr"
+                />
+              </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">ملاحظات</label>
                 <textarea
@@ -356,6 +379,37 @@ export default function OrdersPage() {
                 {saving ? 'جاري الحفظ...' : editingId ? 'تحديث' : 'إنشاء'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Details Modal */}
+      {viewOrder && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setViewOrder(null)}>
+          <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">تفاصيل الطلب</h2>
+              <button onClick={() => setViewOrder(null)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3 text-white">
+              <p><strong className="text-gray-400">اسم العميل:</strong> {viewOrder.customer_name}</p>
+              <p><strong className="text-gray-400">رقم التتبع (7 أرقام):</strong> <span className="font-mono text-amber-500 font-bold">{viewOrder.order_code}</span></p>
+              <p><strong className="text-gray-400">الهاتف:</strong> {viewOrder.phone || 'غير مسجل'}</p>
+              <p><strong className="text-gray-400">التاريخ والوقت:</strong> {viewOrder.delivery_date || 'غير محدد'} {viewOrder.delivery_time}</p>
+              <p><strong className="text-gray-400">السعر:</strong> {viewOrder.price} ر.س</p>
+              <p><strong className="text-gray-400">الحالة:</strong> {statusLabel(viewOrder.status)}</p>
+              <p><strong className="text-gray-400">ملاحظات:</strong> {viewOrder.notes || 'لا يوجد'}</p>
+              {viewOrder.image_url && (
+                <div>
+                  <strong className="text-gray-400 block mb-1">الصورة المرفقة:</strong>
+                  <a href={viewOrder.image_url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden border border-gray-700 bg-black max-h-48">
+                    <img src={viewOrder.image_url} alt="صورة التصميم" className="w-full h-full object-contain" />
+                  </a>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
