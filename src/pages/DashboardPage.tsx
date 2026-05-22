@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchOrderStats, fetchOrders } from '../lib/database';
+import { fetchOrders } from '../lib/database';
 import {
   ShoppingBag,
   Clock,
@@ -21,7 +21,7 @@ interface Stats {
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<Stats>({ total: 0, pending: 0, in_progress: 0, ready: 0, delivered: 0, due_soon: 0 });
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,12 +31,29 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     try {
-      const [statsData, ordersData] = await Promise.all([
-        fetchOrderStats(),
-        fetchOrders(),
-      ]);
-      setStats(statsData);
-      setRecentOrders(ordersData?.slice(0, 5) || []);
+      const ordersData = await fetchOrders();
+      const allOrders = ordersData || [];
+      
+      // حساب الإحصائيات تلقائياً وفريش من الداتابيز مباشرة لتفادي كاش السيستم القديم
+      const calculatedStats = allOrders.reduce((acc: Stats, order: any) => {
+        acc.total += 1;
+        if (order.status === 'pending') acc.pending += 1;
+        if (order.status === 'in_progress') acc.in_progress += 1;
+        if (order.status === 'ready') acc.ready += 1;
+        if (order.status === 'delivered') acc.delivered += 1;
+        
+        // حساب الطلبات المستحقة قريباً (إذا كان تاريخ التسليم هو تاريخ اليوم أو غداً كمثال مرن)
+        if (order.delivery_date && order.status !== 'delivered') {
+          const todayStr = new Date().toISOString().split('T')[0];
+          if (order.delivery_date === todayStr) {
+            acc.due_soon += 1;
+          }
+        }
+        return acc;
+      }, { total: 0, pending: 0, in_progress: 0, ready: 0, delivered: 0, due_soon: 0 });
+
+      setStats(calculatedStats);
+      setRecentOrders(allOrders.slice(0, 5));
     } catch (err) {
       console.error(err);
     } finally {
@@ -44,14 +61,14 @@ export default function DashboardPage() {
     }
   };
 
-  const statCards = stats ? [
+  const statCards = [
     { label: 'إجمالي الطلبات', value: stats.total, icon: ShoppingBag, color: 'from-amber-500 to-amber-600', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
     { label: 'قيد الانتظار', value: stats.pending, icon: Clock, color: 'from-yellow-500 to-yellow-600', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
     { label: 'قيد التنفيذ', value: stats.in_progress, icon: Loader, color: 'from-blue-500 to-blue-600', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-    { label: 'جاهز', value: stats.ready, icon: CheckCircle2, color: 'from-emerald-500 to-emerald-600', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+    { label: 'جاهز للاستلام', value: stats.ready, icon: CheckCircle2, color: 'from-emerald-500 to-emerald-600', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
     { label: 'تم التسليم', value: stats.delivered, icon: Truck, color: 'from-gray-400 to-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
-    { label: 'مستحق قريباً', value: stats.due_soon, icon: AlertTriangle, color: 'from-red-500 to-red-600', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-  ] : [];
+    { label: 'مستحق اليوم', value: stats.due_soon, icon: AlertTriangle, color: 'from-red-500 to-red-600', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+  ];
 
   const statusLabels: Record<string, string> = {
     pending: 'قيد الانتظار',
@@ -130,7 +147,8 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-amber-500 font-bold">{Number(order.price).toLocaleString()}</span>
+                    {/* تعديل العملة لـ ج.م في الأحدث */}
+                    <span className="text-amber-500 font-bold">{Number(order.price).toLocaleString()} ج.م</span>
                     <span className={`px-3 py-1 rounded-full text-xs ${statusColors[order.status]}`}>
                       {statusLabels[order.status]}
                     </span>
@@ -152,7 +170,8 @@ export default function DashboardPage() {
               <p className="text-gray-400 text-sm mb-1">إجمالي المبالغ</p>
               <p className="text-2xl font-bold text-amber-500">
                 {recentOrders.reduce((sum: number, o: any) => sum + Number(o.price), 0).toLocaleString()}
-                <span className="text-sm text-gray-400 mr-1">ر.س</span>
+                {/* تعديل العملة هنا رسمياً لـ ج.م */}
+                <span className="text-sm text-gray-400 mr-1">ج.م</span>
               </p>
             </div>
             <div className="bg-[#1a1a2e] rounded-xl p-4">
@@ -161,18 +180,18 @@ export default function DashboardPage() {
                 <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-l from-emerald-500 to-emerald-600 rounded-full transition-all"
-                    style={{ width: `${stats ? (stats.delivered / Math.max(stats.total, 1)) * 100 : 0}%` }}
+                    style={{ width: `${stats.total > 0 ? (stats.delivered / stats.total) * 100 : 0}%` }}
                   />
                 </div>
                 <span className="text-emerald-400 text-sm font-bold">
-                  {stats ? Math.round((stats.delivered / Math.max(stats.total, 1)) * 100) : 0}%
+                  {stats.total > 0 ? Math.round((stats.delivered / stats.total) * 100) : 0}%
                 </span>
               </div>
             </div>
             <div className="bg-[#1a1a2e] rounded-xl p-4">
               <p className="text-gray-400 text-sm mb-1">طلبات نشطة</p>
               <p className="text-2xl font-bold text-blue-400">
-                {stats ? stats.pending + stats.in_progress + stats.ready : 0}
+                {stats.pending + stats.in_progress + stats.ready}
               </p>
             </div>
           </div>
