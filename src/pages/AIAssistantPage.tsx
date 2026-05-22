@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase'; // تأكد من مسار استيراد سوبابيز الصحيح عندك
 import {
   fetchOrders,
   createOrder,
@@ -30,7 +31,6 @@ export default function AIAssistantPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const listeningRef = useRef(false);
   const ordersRef = useRef<any[]>([]);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
@@ -49,7 +49,7 @@ export default function AIAssistantPage() {
     loadOrders();
     loadHistory();
     return () => {
-      stopListening();
+      if (recognitionRef.current) recognitionRef.current.abort();
       if (synthRef.current) synthRef.current.cancel();
     };
   }, []);
@@ -104,72 +104,18 @@ export default function AIAssistantPage() {
     setMessages(prev => [...prev, { role, content, timestamp: new Date() }]);
   };
 
-  // محرك فك وتفسير الكلمات والأوامر (الأصلية والقوية)
+  // معالج الأوامر الذكي - يفهم النية وينفذ كافة العمليات (إضافة، تعديل، حذف، عرض صور)
   const processCommand = async (text: string): Promise<string> => {
     let lower = text.trim().toLowerCase();
-    // تحويل كل الحروف لعدم الحساسية من الإملاء الصوتي
     lower = lower.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
     
     const currentOrders = ordersRef.current;
 
-    // 1. حساب الإحصائيات (كم طلب / كام اوردر)
-    if (lower.includes('كام') || lower.includes('عدد') || lower.includes('احصائيات') || lower.includes('اجمالي') || lower.includes('طلب') || lower.includes('وردر')) {
-      // لو الجملة فيها "صوره" أو "عرض" يبقى يروح لأمر الصور وميدخلش هنا
-      if (!lower.includes('صوره') && !lower.includes('عرض') && !lower.includes('شوف') && !lower.includes('هات')) {
-        const stats = await fetchOrderStats();
-        return `إجمالي الطلبات عندك هو ${stats.total || 0}، عندك في الانتظار ${stats.pending || 0}، وقيد التنفيذ ${stats.in_progress || 0}، والجاهز للتسليم هو ${stats.ready || 0}.`;
-      }
-    }
-
-    // 2. أمر عرض وجلب الصور
-    if (lower.includes('صوره') || lower.includes('عرض') || lower.includes('شوف') || lower.includes('هات')) {
-      const codeMatch = lower.match(/[0-9]{7}/);
-      if (codeMatch) {
-        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
-        if (order) {
-          if (order.image_url) {
-            setCurrentImageUrl(order.image_url);
-            return `أهو يا فنان، دي الصورة اللي طلبتها للأوردر رقم ${codeMatch[0]}.`;
-          }
-          return `الأوردر رقم ${codeMatch[0]} موجود بس ملوش صور مرفوعة.`;
-        }
-        return `ملقيتش أوردر في السيستم بالكود ده ${codeMatch[0]}`;
-      }
-      
-      // بحث بالاسم
-      const nameMatch = lower.match(/(?:طلب|اوردر|لـ|باسم)\s+(.+?)(?:\s|$)/);
+    // 1. أمر إضافة أوردر جديد بذكاء واشتقاق الاسم
+    if (lower.includes('اضف') || lower.includes('سجل') || lower.includes('اعمل اوردر') || lower.includes('جديد')) {
+      const nameMatch = lower.match(/(?:باسم|اسم|للزبون|للعميل)\s+(.+?)(?:\s|$)/) || lower.match(/(?:اوردر|طلب)\s+(.+?)(?:\s|$)/);
       const name = nameMatch ? nameMatch[1].trim() : null;
-      if (name) {
-        const order = currentOrders.find((o: any) => o.customer_name && o.customer_name.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').includes(name));
-        if (order && order.image_url) {
-          setCurrentImageUrl(order.image_url);
-          return `أهو يا فنان، دي الصورة الخاصة بطلب العميل ${order.customer_name}`;
-        }
-        return `ملقيتش صور لطلب باسم ${name}`;
-      }
-    }
-
-    // 3. سؤال المصمم والمطور
-    if (lower.includes('صمم') || lower.includes('طور') || lower.includes('اسلام') || lower.includes('الكومي')) {
-      return 'المهندس إسلام الكومي هو اللي صممني وبناني بالكامل يا فنان.';
-    }
-
-    // 4. الحسابات والأسعار
-    if (lower.includes('سعر') || lower.includes('اسعار') || lower.includes('مبلغ') || lower.includes('فلوس')) {
-      const total = currentOrders.reduce((s: number, o: any) => s + Number(o.price || 0), 0);
-      return `إجمالي مبالغ الأوردرات المسجلة عندك هو ${total.toLocaleString()} جنيه يا فنان.`;
-    }
-
-    // 5. الوقت والساعة
-    if (lower.includes('ساعه') || lower.includes('وقت')) {
-      return `الساعة دلوقتي ${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}.`;
-    }
-
-    // 6. إضافة أوردر جديد
-    if ((lower.includes('اضف') || lower.includes('سجل')) && (lower.includes('طلب') || lower.includes('اوردر'))) {
-      const nameMatch = lower.match(/باسم\s+(.+?)(?:\s|$)/) || lower.match(/اسم\s+(.+?)(?:\s|$)/);
-      const name = nameMatch ? nameMatch[1].trim() : null;
-      if (name) {
+      if (name && name !== 'اوردر' && name !== 'طلب') {
         const code = await generateOrderCode();
         await createOrder({
           order_code: code,
@@ -178,22 +124,119 @@ export default function AIAssistantPage() {
           delivery_date: null,
           delivery_time: null,
           price: 0,
-          notes: '',
+          notes: 'تمت الإضافة عبر المساعد الصوتي',
           status: 'pending',
         });
         await loadOrders();
-        return `تم إنشاء طلب جديد بنجاح باسم ${name} وكود الأوردر هو ${code}`;
+        return `أبشر يا فنان، سجلت أوردر جديد في السيستم باسم العميل "${name}"، وكود الأوردر بتاعه هو: ${code}`;
       }
-      return 'قولي: أضف طلب جديد باسم أحمد';
+      return 'علشان أضيف الأوردر، قولي الاسم بوضوح، مثلاً: أضف أوردر باسم رنا محمد.';
     }
 
-    // إذا تاه ومفهش الجملة خالص، هيروح لـ RPC سوبابيز كحل أخير
-    try {
-      const { data } = await supabase.rpc('get_ai_response', { p_message: text });
-      if (data) return data;
-    } catch {}
+    // 2. أمر تعديل أو تحديث بيانات وحالة الأوردر
+    if (lower.includes('غير') || lower.includes('حدث') || lower.includes('تعديل') || lower.includes('حول')) {
+      const statusMap: Record<string, string> = {
+        'انتظار': 'pending',
+        'تنفيذ': 'in_progress',
+        'جاهز': 'ready',
+        'تسليم': 'delivered',
+      };
+      let newStatus = '';
+      for (const [key, val] of Object.entries(statusMap)) {
+        if (lower.includes(key)) { newStatus = val; break; }
+      }
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch && newStatus) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          await updateOrder(order.id, { status: newStatus });
+          await loadOrders();
+          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز للتسليم', delivered: 'تم التسليم' };
+          return `تم تحديث الأوردر رقم ${order.order_code} بنجاح، وحالته اتغيرت إلى: ${statusLabels[newStatus]}.`;
+        }
+        return `بحثت عن أوردر بالكود ${codeMatch[0]} وملقيتوش في السيستم.`;
+      }
+      return 'لتعديل الحالة، قولي مثلاً: غير حالة الأوردر 1234567 إلى جاهز.';
+    }
 
-    return 'أنا سامعك كويس، اطلب مني: كم أوردر عندي، الساعة كام، أو قولي هات صورة أوردر واذكر رقمه.';
+    // 3. أمر مسح وحذف أوردر نهائياً
+    if (lower.includes('احذف') || lower.includes('امسح') || lower.includes('شيل')) {
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          await deleteOrder(order.id);
+          await loadOrders();
+          return `تمام يا فنان، حذفت الأوردر رقم ${order.order_code} تماماً من قاعدة البيانات.`;
+        }
+        return `ملقيتش أوردر برقم ${codeMatch[0]} عشان أحذفه.`;
+      }
+      return 'لحذف الأوردر، اذكر كود الأوردر المكون من 7 أرقام (مثال: امسح الأوردر 1234567).';
+    }
+
+    // 4. أمر جلب وعرض الصور (بالكود أو باسم الشخص)
+    if (lower.includes('صوره') || lower.includes('الصور') || lower.includes('وريني') || lower.includes('هات')) {
+      const codeMatch = lower.match(/[0-9]{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          if (order.image_url) {
+            setCurrentImageUrl(order.image_url);
+            return `تفضل يا فنان، دي الصورة المرفوعة للأوردر رقم ${codeMatch[0]}.`;
+          }
+          return `الأوردر رقم ${codeMatch[0]} موجود ومسجل، بس ملهوش صور مرفوعة حتى الآن.`;
+        }
+      }
+      
+      // جلب الصورة بالاسم
+      const nameMatch = lower.match(/(?:طلب|اوردر|لـ|باسم|شخص|عميل|زبون)\s+(.+?)(?:\s|$)/);
+      const name = nameMatch ? nameMatch[1].trim() : null;
+      if (name) {
+        const order = currentOrders.find((o: any) => o.customer_name && o.customer_name.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').includes(name));
+        if (order) {
+          if (order.image_url) {
+            setCurrentImageUrl(order.image_url);
+            return `أهو يا فنان، دي الصورة الخاصة بأوردر العميل العميل ${order.customer_name}.`;
+          }
+          return `لقيت أوردر باسم ${order.customer_name} بس ملهوش صور مرفوعة.`;
+        }
+        return `ملقيتش أي أوردر مسجل باسم ${name} عشان أعرض صورته.`;
+      }
+    }
+
+    // 5. أمر الاستعلام عن تفاصيل أوردر معين
+    if (lower.includes('تفاصيل') || lower.includes('عرض') || lower.includes('قولي') || lower.includes('بيانات')) {
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز للتسليم', delivered: 'تم التسليم' };
+          return `إليك تفاصيل الأوردر ${order.order_code}: باسم العميل ${order.customer_name}، حالته الحالية هي (${statusLabels[order.status] || order.status})، وإجمالي السعر ${Number(order.price || 0).toLocaleString()} جنيه.`;
+        }
+      }
+
+      const nameMatch = lower.match(/(?:تفاصيل|باسم|لـ|عن|اوردر|زبون)\s+(.+?)(?:\s|$)/);
+      if (nameMatch) {
+        const targetName = nameMatch[1].trim();
+        const order = currentOrders.find((o: any) => o.customer_name && o.customer_name.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').includes(targetName));
+        if (order) {
+          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز للتسليم', delivered: 'تم التسليم' };
+          return `لقيت أوردر باسم العميل "${order.customer_name}" (كود: ${order.order_code})، حالته هي ${statusLabels[order.status] || order.status} وإجمالي حسابه ${Number(order.price || 0).toLocaleString()} جنيه.`;
+        }
+        return `ملقيتش أوردرات في السيستم باسم ${targetName}.`;
+      }
+    }
+
+    // 6. استدعاء ذكاء سوبابيز الاصطناعي (الـ RPC الحرة للأسئلة العامة والدردشة)
+    try {
+      const { data, error } = await supabase.rpc('get_ai_response', { p_message: text });
+      if (data && !error) return data;
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 7. الرد الاحتياطي الذكي في حالة لم يطابق أي شيء
+    return 'أنا سامعك كويس وبفهمك. قولي بوضوح: اضف اوردر باسم فلان، احذف الاوردر 1234567، غير حالة الاوردر، أو هات صورة أوردر فلان.';
   };
 
   const handleUserMessage = async (text: string) => {
@@ -216,7 +259,7 @@ export default function AIAssistantPage() {
       }
     } catch (err) {
       console.error(err);
-      addMessage('assistant', 'عذراً، حدث خطأ أثناء المعالجة.');
+      addMessage('assistant', 'عذراً يا فنان، حصلت مشكلة أثناء تنفيذ الطلب.');
     } finally {
       setProcessing(false);
     }
@@ -230,12 +273,10 @@ export default function AIAssistantPage() {
   };
 
   const stopListening = () => {
-    listeningRef.current = false;
     if (recognitionRef.current) {
       recognitionRef.current.onend = null;
       recognitionRef.current.onresult = null;
       recognitionRef.current.abort();
-      recognitionRef.current = null;
     }
     setListening(false);
   };
@@ -243,7 +284,7 @@ export default function AIAssistantPage() {
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      addMessage('assistant', 'الميزة الصوتية غير مدعومة على متصفحك الحالي.');
+      addMessage('assistant', 'الميزة الصوتية غير مدعومة بالكامل على متصفحك.');
       return;
     }
 
@@ -256,10 +297,9 @@ export default function AIAssistantPage() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'ar-EG'; 
-    recognition.continuous = false; // تحويلها لـ false يضمن لقط الجملة فوراً ومعالجتها بدون تهنيج
+    recognition.continuous = false; 
     recognition.interimResults = false;
 
-    // لقط النص الكامل والصحيح والنهائي فوراً
     recognition.onresult = (event: any) => {
       if (event.results && event.results[0]) {
         const transcript = event.results[0][0].transcript.trim();
@@ -269,19 +309,10 @@ export default function AIAssistantPage() {
       }
     };
 
-    recognition.onerror = (event: any) => {
-      console.error(event.error);
-      setListening(false);
-      listeningRef.current = false;
-    };
-
-    recognition.onend = () => {
-      setListening(false);
-      listeningRef.current = false;
-    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
 
     recognitionRef.current = recognition;
-    listeningRef.current = true;
     recognition.start();
     setListening(true);
   };
@@ -338,7 +369,7 @@ export default function AIAssistantPage() {
         </div>
         
         <p className="text-slate-400 text-xs mt-4 tracking-wide font-medium">
-          {listening ? 'جاري الاستماع... تحدث الآن' : speaking ? 'جاري نطق الإجابة...' : 'اضغط على المايك وتحدث مباشرة'}
+          {listening ? 'سامعك بذكاء، اتفضل اطلب أي تعديل أو إضافة...' : speaking ? 'جاري التحدث والرد...' : 'اضغط على المايك وتحدث مباشرة'}
         </p>
       </div>
 
@@ -346,8 +377,8 @@ export default function AIAssistantPage() {
         {messages.length === 0 && (
           <div className="text-center py-12">
             <Bot className="w-14 h-14 text-slate-700 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm font-bold">مرحباً بك في المساعد الصوتي</p>
-            <p className="text-slate-500 text-xs mt-1">اضغط المايك واطلب منه أي شيء وسيرد عليك فوراً</p>
+            <p className="text-slate-400 text-sm font-bold">المساعد الشامل للأتيليه الذكي 🤖</p>
+            <p className="text-slate-500 text-xs mt-1">تعديل، إضافة، حذف، عرض صور، أو دردشة حرة.. جربني الآن!</p>
           </div>
         )}
         
@@ -371,7 +402,7 @@ export default function AIAssistantPage() {
 
         {currentImageUrl && (
           <div className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-800 p-2.5 rounded-2xl shadow-2xl animate-fade-in mt-2">
-            <div className="text-xs text-amber-400 font-bold mb-1.5 text-center">🖼️ الصورة المطلوبة للأوردر:</div>
+            <div className="text-xs text-amber-400 font-bold mb-1.5 text-center">🖼️ الصورة المطلوبة من الأوردر:</div>
             <img src={currentImageUrl} alt="Order snapshot" className="w-full h-auto max-h-60 object-cover rounded-xl" />
           </div>
         )}
@@ -379,7 +410,7 @@ export default function AIAssistantPage() {
         {processing && (
           <div className="flex justify-end">
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2 flex items-center gap-2">
-              <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" />
               <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
