@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
-import { Plus, Search, CreditCard as Edit3, Trash2, X, Image as ImageIcon, Calendar, Clock, Filter, Eye } from 'lucide-react';
+import { Plus, Search, CreditCard as Edit3, Trash2, X, Image as ImageIcon, Calendar, Clock, Filter, Eye, Upload } from 'lucide-react';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ezdirycgbnkxxymmyagh.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -22,7 +22,7 @@ interface OrderForm {
   price: string;
   notes: string;
   status: string;
-  image_url: string; // إضافة خانة الصورة في الفورم
+  image_url: string; 
 }
 
 const emptyForm: OrderForm = {
@@ -76,14 +76,29 @@ export default function OrdersPage() {
     return matchSearch && matchStatus;
   });
 
-  // تحديث الدالة لتوليد 7 أرقام عشوائية فقط لتسهيل التتبع
+  // توليد 7 أرقام عشوائية نصية للتتبع
   const generateNumericOrderCode = () => {
     let result = '';
-    const digits = '0123456789';
     for (let i = 0; i < 7; i++) {
-      result += digits.charAt(Math.floor(Math.random() * digits.length));
+      result += Math.floor(Math.random() * 10).toString();
     }
     return result;
+  };
+
+  // تحويل الصورة المرفوعة إلى Base64
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 2 ميجابايت");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setForm({ ...form, image_url: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,7 +116,7 @@ export default function OrdersPage() {
             price: parseFloat(form.price) || 0,
             notes: form.notes,
             status: form.status,
-            image_url: form.image_url || null, // تحديث رابط الصورة
+            image_url: form.image_url || null,
           })
           .eq('id', editingId);
 
@@ -120,8 +135,8 @@ export default function OrdersPage() {
             price: parseFloat(form.price) || 0,
             notes: form.notes,
             status: form.status,
-            order_code: generatedCode, // رقم التتبع المكون من 7 أرقام
-            image_url: form.image_url || null, // حفظ رابط الصورة
+            order_code: String(generatedCode), 
+            image_url: form.image_url || null,
           }]);
 
         if (error) throw error;
@@ -133,7 +148,7 @@ export default function OrdersPage() {
       await loadOrders();
     } catch (err: any) {
       console.error(err);
-      alert("خطأ في قاعدة البيانات: " + (err.message || JSON.stringify(err)));
+      alert("خطأ أثناء الحفظ: " + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
     }
@@ -238,10 +253,10 @@ export default function OrdersPage() {
                 </span>
               </div>
 
-              {/* عرض مصغر للصورة لو موجودة */}
+              {/* عرض الصورة المرفوعة */}
               {order.image_url && (
-                <div className="mb-3 rounded-xl overflow-hidden border border-gray-800 h-32 bg-black/20">
-                  <img src={order.image_url} alt="صورة الأوردر" className="w-full h-full object-cover" />
+                <div className="mb-3 rounded-xl overflow-hidden border border-gray-800 h-40 bg-black/40 flex items-center justify-center">
+                  <img src={order.image_url} alt="صورة الموديل" className="w-full h-full object-cover" />
                 </div>
               )}
 
@@ -257,7 +272,8 @@ export default function OrdersPage() {
               </div>
 
               <div className="flex items-center justify-between pt-3 border-t border-gray-800">
-                <span className="text-amber-500 font-bold">{order.price ? Number(order.price).toLocaleString() : 0} <span className="text-xs text-gray-500">ر.س</span></span>
+                {/* تعديل العملة إلى ج.م */}
+                <span className="text-amber-500 font-bold">{order.price ? Number(order.price).toLocaleString() : 0} <span className="text-xs text-gray-500">ج.م</span></span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setViewOrder(order)} className="p-2 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-500/10 transition-all">
                     <Eye className="w-4 h-4" />
@@ -329,7 +345,7 @@ export default function OrdersPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">السعر</label>
+                <label className="block text-sm text-gray-400 mb-1.5">السعر (بالجنيه المصري)</label>
                 <input
                   type="number"
                   value={form.price}
@@ -350,18 +366,29 @@ export default function OrdersPage() {
                   ))}
                 </select>
               </div>
-              {/* إضافة خانة رابط الصورة */}
+
+              {/* ميزة رفع صورة حقيقية من الهاتف */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">رابط صورة التصميم / الموديل</label>
-                <input
-                  type="url"
-                  value={form.image_url}
-                  onChange={e => setForm({ ...form, image_url: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
-                  className="w-full bg-[#1a1a2e] border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500/50"
-                  dir="ltr"
-                />
+                <label className="block text-sm text-gray-400 mb-1.5">رفع صورة الموديل من الهاتف</label>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 bg-[#1a1a2e] border border-dashed border-gray-600 rounded-xl px-4 py-3 text-sm text-gray-300 cursor-pointer hover:border-amber-500/50 transition-all flex-1 justify-center">
+                    <Upload className="w-4 h-4 text-amber-500" />
+                    <span>اختر صورة من الاستوديو</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {form.image_url && (
+                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-gray-700 bg-black">
+                      <img src={form.image_url} alt="معاينة" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
               </div>
+
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">ملاحظات</label>
                 <textarea
@@ -376,7 +403,7 @@ export default function OrdersPage() {
                 disabled={saving}
                 className="w-full bg-gradient-to-l from-amber-500 to-amber-600 text-black font-semibold py-3 rounded-xl transition-all disabled:opacity-50"
               >
-                {saving ? 'جاري الحفظ...' : editingId ? 'تحديث' : 'إنشاء'}
+                {saving ? 'جاري الحفظ ورفع الصورة...' : editingId ? 'تحديث الطلب' : 'إنشاء الطلب'}
               </button>
             </form>
           </div>
@@ -395,18 +422,19 @@ export default function OrdersPage() {
             </div>
             <div className="space-y-3 text-white">
               <p><strong className="text-gray-400">اسم العميل:</strong> {viewOrder.customer_name}</p>
-              <p><strong className="text-gray-400">رقم التتبع (7 أرقام):</strong> <span className="font-mono text-amber-500 font-bold">{viewOrder.order_code}</span></p>
+              <p><strong className="text-gray-400">رقم التتبع (7 أرقام):</strong> <span className="font-mono text-amber-500 font-bold text-lg">{viewOrder.order_code}</span></p>
               <p><strong className="text-gray-400">الهاتف:</strong> {viewOrder.phone || 'غير مسجل'}</p>
               <p><strong className="text-gray-400">التاريخ والوقت:</strong> {viewOrder.delivery_date || 'غير محدد'} {viewOrder.delivery_time}</p>
-              <p><strong className="text-gray-400">السعر:</strong> {viewOrder.price} ر.س</p>
+              {/* تعديل العملة إلى ج.م في التفاصيل */}
+              <p><strong className="text-gray-400">السعر:</strong> {viewOrder.price} ج.م</p>
               <p><strong className="text-gray-400">الحالة:</strong> {statusLabel(viewOrder.status)}</p>
               <p><strong className="text-gray-400">ملاحظات:</strong> {viewOrder.notes || 'لا يوجد'}</p>
               {viewOrder.image_url && (
                 <div>
-                  <strong className="text-gray-400 block mb-1">الصورة المرفقة:</strong>
-                  <a href={viewOrder.image_url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden border border-gray-700 bg-black max-h-48">
+                  <strong className="text-gray-400 block mb-1">الصورة المرفوعة:</strong>
+                  <div className="rounded-xl overflow-hidden border border-gray-700 bg-black max-h-64 flex items-center justify-center">
                     <img src={viewOrder.image_url} alt="صورة التصميم" className="w-full h-full object-contain" />
-                  </a>
+                  </div>
                 </div>
               )}
             </div>
