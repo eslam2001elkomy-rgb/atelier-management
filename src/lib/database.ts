@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-// Generate unique 7-digit order code
+// 1. توليد كود فريد للطلب مكون من 7 أرقام
 export async function generateOrderCode(): Promise<string> {
   let code = '';
   let isUnique = false;
@@ -16,7 +16,6 @@ export async function generateOrderCode(): Promise<string> {
       .eq('order_code', code)
       .maybeSingle();
     
-    // نعتبره فريد فقط إذا لم يحدث خطأ في الطلب، ولم يتم العثور على كود مطابق
     if (!error && !data) {
       isUnique = true;
     }
@@ -29,7 +28,7 @@ export async function generateOrderCode(): Promise<string> {
   return code;
 }
 
-// Orders
+// 2. جلب جميع الطلبات للوحة التحكم وقائمة الطلبات
 export async function fetchOrders() {
   const { data, error } = await supabase
     .from('orders')
@@ -39,6 +38,7 @@ export async function fetchOrders() {
   return data;
 }
 
+// 3. جلب طلب معين باستخدام الـ ID
 export async function fetchOrderById(id: string) {
   const { data, error } = await supabase
     .from('orders')
@@ -49,6 +49,7 @@ export async function fetchOrderById(id: string) {
   return data;
 }
 
+// 4. تتبع الطلب باستخدام كود السبعة أرقام
 export async function fetchOrderByCode(code: string) {
   const { data, error } = await supabase
     .from('orders')
@@ -59,6 +60,7 @@ export async function fetchOrderByCode(code: string) {
   return data;
 }
 
+// 5. إضافة طلب جديد وربطه بالعميل بشكل صحيح بدون أخطاء
 export async function createOrder(order: {
   order_code: string;
   customer_name: string;
@@ -80,23 +82,37 @@ export async function createOrder(order: {
   if (existingCustomer) {
     customerId = existingCustomer.id;
   } else if (order.phone) {
-    const { data: newCustomer } = await supabase
+    const { data: newCustomer, error: custError } = await supabase
       .from('customers')
       .insert({ name: order.customer_name, phone: order.phone })
       .select('id')
       .maybeSingle();
+      
+    if (custError) console.error('خطأ أثناء تسجيل العميل الجديد:', custError);
     if (newCustomer) customerId = newCustomer.id;
   }
 
   const { data, error } = await supabase
     .from('orders')
-    .insert({ ...order, customer_id: customerId })
+    .insert({
+      order_code: order.order_code,
+      customer_name: order.customer_name,
+      phone: order.phone,
+      delivery_date: order.delivery_date,
+      delivery_time: order.delivery_time,
+      price: order.price,
+      notes: order.notes,
+      status: order.status,
+      customer_id: customerId
+    })
     .select('*, order_images(*)')
     .maybeSingle();
+
   if (error) throw error;
   return data;
 }
 
+// 6. تحديث بيانات الطلب أو حالته
 export async function updateOrder(id: string, updates: Record<string, unknown>) {
   const { data, error } = await supabase
     .from('orders')
@@ -108,8 +124,8 @@ export async function updateOrder(id: string, updates: Record<string, unknown>) 
   return data;
 }
 
+// 7. حذف الطلب وحذف صوره من الـ Storage
 export async function deleteOrder(id: string) {
-  // جلب الصور المرتبطة بالأوردر لمسحها من الـ Storage أولاً
   const { data: images } = await supabase
     .from('order_images')
     .select('image_url')
@@ -136,7 +152,7 @@ export async function deleteOrder(id: string) {
   if (error) throw error;
 }
 
-// Images
+// 8. رفع صورة جديدة للطلب
 export async function uploadOrderImage(orderId: string, file: File) {
   const ext = file.name.split('.').pop();
   const fileName = `${orderId}/${Date.now()}.${ext}`;
@@ -160,8 +176,8 @@ export async function uploadOrderImage(orderId: string, file: File) {
   return data;
 }
 
+// 9. حذف صورة معينة للطلب
 export async function deleteOrderImage(id: string) {
-  // جلب رابط الصورة لمعرفة مسار الملف في الـ Storage
   const { data: imgData } = await supabase
     .from('order_images')
     .select('image_url')
@@ -172,12 +188,10 @@ export async function deleteOrderImage(id: string) {
     const urlParts = imgData.image_url.split('/order-images/');
     if (urlParts.length > 1) {
       const filePath = urlParts[1];
-      // حذف الملف الفعلي من الـ Storage
       await supabase.storage.from('order-images').remove([filePath]);
     }
   }
 
-  // حذف السجل من جدول الداتا بيز
   const { error } = await supabase
     .from('order_images')
     .delete()
@@ -185,7 +199,7 @@ export async function deleteOrderImage(id: string) {
   if (error) throw error;
 }
 
-// Customers
+// 10. جلب العملاء لصفحة العملاء
 export async function fetchCustomers() {
   const { data, error } = await supabase
     .from('customers')
@@ -195,6 +209,7 @@ export async function fetchCustomers() {
   return data;
 }
 
+// 11. حذف عميل
 export async function deleteCustomer(id: string) {
   const { error } = await supabase
     .from('customers')
@@ -203,7 +218,7 @@ export async function deleteCustomer(id: string) {
   if (error) throw error;
 }
 
-// Notifications
+// 12. الإشعارات
 export async function fetchNotifications(userId: string) {
   const { data, error } = await supabase
     .from('notifications')
@@ -247,7 +262,7 @@ export async function createNotification(notification: {
   return data;
 }
 
-// AI Conversations
+// 13. حفظ محادثات الذكاء الاصطناعي
 export async function saveConversation(conversation: {
   user_id: string;
   user_message: string;
@@ -274,7 +289,7 @@ export async function fetchConversations(userId: string) {
   return data;
 }
 
-// Settings
+// 14. الإعدادات
 export async function fetchSettings(userId: string) {
   const { data, error } = await supabase
     .from('settings')
@@ -292,31 +307,4 @@ export async function upsertSetting(userId: string, key: string, value: string) 
     .maybeSingle();
   if (error) throw error;
   return data;
-}
-
-// Statistics
-export async function fetchOrderStats() {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('status, delivery_date, delivery_time');
-  if (error) throw error;
-
-  const now = new Date();
-
-  const stats = {
-    total: data.length,
-    pending: data.filter(o => o.status === 'pending').length,
-    in_progress: data.filter(o => o.status === 'in_progress').length,
-    ready: data.filter(o => o.status === 'ready').length,
-    delivered: data.filter(o => o.status === 'delivered').length,
-    due_soon: data.filter(o => {
-      if (!o.delivery_date) return false;
-      const deliveryDate = new Date(o.delivery_date);
-      const diffMs = deliveryDate.getTime() - now.getTime();
-      const diffHours = diffMs / (1000 * 60 * 60);
-      return diffHours > 0 && diffHours <= 24;
-    }).length,
-  };
-
-  return stats;
 }
