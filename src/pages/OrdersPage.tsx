@@ -74,6 +74,16 @@ export default function OrdersPage() {
     return matchSearch && matchStatus;
   });
 
+  // دالة لتوليد كود فريد وعشوائي تماماً لإرضاء شرط الـ NOT NULL في الداتابيز
+  const generateUniqueOrderCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'ORD-';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -95,7 +105,9 @@ export default function OrdersPage() {
         if (error) throw error;
         alert("تم تحديث الطلب بنجاح!");
       } else {
-        // تم إلغاء توليد الكود من الكود وجعله يرسل البيانات الأساسية فقط لمنع تعارض الـ Unique
+        // نولد كود عشوائي ونرسله فوراً مع الطلب الجديد
+        const generatedCode = generateUniqueOrderCode();
+        
         const { error } = await fallbackClient
           .from('orders')
           .insert([{
@@ -106,6 +118,7 @@ export default function OrdersPage() {
             price: parseFloat(form.price) || 0,
             notes: form.notes,
             status: form.status,
+            order_code: generatedCode // إرسال الكود إجبارياً هنا لحل المشكلة
           }]);
 
         if (error) throw error;
