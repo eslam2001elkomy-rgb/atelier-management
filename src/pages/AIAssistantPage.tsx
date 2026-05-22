@@ -6,12 +6,11 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 export default function AIAssistantPage() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [statusText, setStatusText] = useState('انقر على المايك وتحدث مباشرة...');
+  const [statusText, setStatusText] = useState('اضغط على المايك وتحدث مباشرة...');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -21,24 +20,22 @@ export default function AIAssistantPage() {
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = false;
-      rec.lang = 'ar-EG'; // لقط اللهجة المصرية والعربية بدقة
+      rec.lang = 'ar-EG'; // لقط فوري للهجة المصرية والعربية
       rec.interimResults = false;
       rec.maxAlternatives = 1;
 
       rec.onstart = () => {
         setIsListening(true);
-        setStatusText('أنا سامعك دلوقتي، اتفضل اطلب...');
+        setStatusText('أنا سامعك، اتفضل اطلب...');
         setImageUrl(null);
-        // لو المساعد بيتكلم وجيت أنت تتكلم، يسكته فوراً ليسرع الاستجابة
         if (synthRef.current?.speaking) {
           synthRef.current.cancel();
           setIsSpeaking(false);
         }
       };
 
-      rec.onerror = (e: any) => {
-        console.error(e);
-        setStatusText('لم أتمكن من سماعك بوضوح، اضغط وجرب تاني.');
+      rec.onerror = () => {
+        setStatusText('اضغط وتحدث مرة أخرى...');
         setIsListening(false);
       };
 
@@ -48,23 +45,20 @@ export default function AIAssistantPage() {
 
       rec.onresult = async (event: any) => {
         const voiceInput = event.results[0][0].transcript;
-        setStatusText(`جاري معالجة أمرك: "${voiceInput}"`);
+        setStatusText(`جاري التفكير...`);
         await handleVoiceCommand(voiceInput);
       };
 
       recognitionRef.current = rec;
     } else {
-      setStatusText('المتصفح الحالي لا يدعم ميزة التعرف على الصوت.');
+      setStatusText('الميزة غير مدعومة في هذا المتصفح.');
     }
 
     return () => {
-      if (synthRef.current) {
-        synthRef.current.cancel();
-      }
+      if (synthRef.current) synthRef.current.cancel();
     };
   }, []);
 
-  // دالة إرسال الكلام لـ Supabase ونطق الرد فوراً
   const handleVoiceCommand = async (command: string) => {
     try {
       const { data, error } = await supabase.rpc('get_ai_response', { p_message: command });
@@ -73,30 +67,29 @@ export default function AIAssistantPage() {
       if (data && data.startsWith('SHOW_IMAGE:')) {
         const url = data.replace('SHOW_IMAGE:', '');
         setImageUrl(url);
-        executeVoiceOutput('أهو يا فنان، دي الصورة اللي طلبتها للأوردر.');
+        executeVoiceOutput('أهو يا فنان، دي الصورة اللي طلبتها.');
       } else {
-        executeVoiceOutput(data || 'لم أتمكن من العثور على إجابة واضحة.');
+        executeVoiceOutput(data || 'لم أسمعك جيداً.');
       }
     } catch (err) {
-      console.error(err);
-      executeVoiceOutput('حصلت مشكلة في السيرفر أثناء قراءة البيانات يا فنان.');
+      executeVoiceOutput('حدث خطأ في السيرفر يا فنان.');
     }
   };
 
-  // دالة النطق الاحترافية الذكية
+  // دالة نطق إجبارية وقوية تتخطى حجب المتصفحات
   const executeVoiceOutput = (text: string) => {
     if (!synthRef.current) return;
 
-    synthRef.current.cancel(); // تنظيف أي صوت قديم
+    synthRef.current.cancel(); // إلغاء أي كاش صوتي معلق فوراً
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-EG';
-    utterance.rate = 1.05; // تسريع الأداء قليلاً لردود فورية وحيوية
+    utterance.lang = 'ar-EG'; // النطق باللهجة العربية المفهومة
+    utterance.rate = 1.0; 
     utterance.pitch = 1.0;
 
     utterance.onstart = () => {
       setIsSpeaking(true);
-      setStatusText(text); // عرض النص المسموع للمتابعة البصرية فقط
+      setStatusText(text); // تحديث نص الشاشة للمتابعة فقط
     };
 
     utterance.onend = () => {
@@ -104,16 +97,24 @@ export default function AIAssistantPage() {
       setStatusText('جاهز لأمرك القادم...');
     };
 
-    utterance.onerror = () => {
+    utterance.onerror = (e) => {
+      console.error('Speech error:', e);
       setIsSpeaking(false);
+      setStatusText('حدث خطأ أثناء نطق المساعد للرد.');
     };
 
-    utteranceRef.current = utterance;
-    synthRef.current.speak(utterance);
+    // حيلة إجبارية لتشغيل الصوت في متصفحات الموبايل (Safari & Chrome Mobile)
+    setTimeout(() => {
+      synthRef.current?.speak(utterance);
+    }, 50);
   };
 
-  // تشغيل أو إيقاف المايك
   const toggleListening = () => {
+    // تفعيل وتأشير نظام الصوت مع أول ضغطة يد حقيقية للمستخدم
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    }
+
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
@@ -121,26 +122,25 @@ export default function AIAssistantPage() {
     }
   };
 
-  // زر الإيقاف الفوري للمساعد إذا أطال الكلام
   const handleStopSpeaking = () => {
     if (synthRef.current?.speaking) {
       synthRef.current.cancel();
       setIsSpeaking(false);
-      setStatusText('تم إيقاف النطق. جاهز لأمر جديد...');
+      setStatusText('تم إسكات المساعد. جاهز لأمر جديد...');
     }
   };
 
   return (
     <div className="flex flex-col items-center justify-between h-[calc(100vh-140px)] max-w-xl mx-auto p-6 text-white" dir="rtl">
-      {/* الرأس والترحيب الفخم */}
-      <div className="text-center mt-4">
-        <h2 className="text-3xl font-extrabold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+      
+      {/* الواجهة النظيفة: تم إلغاء السطر التعريفي العلوي تماماً */}
+      <div className="text-center mt-6">
+        <h2 className="text-3xl font-extrabold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent tracking-wider">
           AI VOICE ASSISTANT
         </h2>
-        <p className="text-slate-400 text-xs mt-1">النظام الصوتي الذكي لأتيليه إسلام الكومي</p>
       </div>
 
-      {/* منطقة الأنييميشن الحركي الدائري المعتمد على الحالة */}
+      {/* دائرة التحكم والموجات الحركية للمايك والصوت */}
       <div className="relative flex items-center justify-center my-auto">
         {isListening && (
           <div className="absolute w-44 h-44 rounded-full bg-blue-500/20 animate-ping" />
@@ -173,22 +173,20 @@ export default function AIAssistantPage() {
         </button>
       </div>
 
-      {/* الجزء السفلي: نصوص المتابعة وأزرار التحكم الذكية */}
+      {/* نصوص المتابعة وزر الإسكات الفوري */}
       <div className="w-full space-y-4 mb-4">
         
-        {/* شاشة مراقبة الحالة بصرياً */}
         <div className="bg-slate-900/80 backdrop-blur border border-slate-800 p-4 rounded-2xl w-full text-center min-h-[70px] flex items-center justify-center px-6 shadow-inner">
           <p className={`text-sm font-medium leading-relaxed ${isListening ? 'text-blue-400' : isSpeaking ? 'text-amber-400' : 'text-slate-300'}`}>
             {statusText}
           </p>
         </div>
 
-        {/* أزرار تفاعلية سريعة: ومنها زرار التوقف الإجباري عن الكلام */}
-        <div className="flex gap-3 justify-center">
+        <div className="flex justify-center min-h-[40px]">
           {isSpeaking && (
             <button
               onClick={handleStopSpeaking}
-              className="flex items-center gap-2 bg-red-600/90 hover:bg-red-600 px-6 py-2.5 rounded-full text-xs font-bold transition-all shadow-lg shadow-red-600/30 border border-red-500"
+              className="flex items-center gap-2 bg-red-600/90 hover:bg-red-600 px-6 py-2.5 rounded-full text-xs font-bold transition-all shadow-lg shadow-red-600/30 border border-red-500 animate-fade-in"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 19h12V5H6v14z" />
@@ -198,9 +196,8 @@ export default function AIAssistantPage() {
           )}
         </div>
 
-        {/* عرض كارت صورة الأوردر الفوري لو انطلب صوتياً */}
         {imageUrl && (
-          <div className="w-full bg-slate-900 border border-slate-800 p-3 rounded-2xl overflow-hidden shadow-2xl transition-all animate-fade-in">
+          <div className="w-full bg-slate-900 border border-slate-800 p-3 rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
             <img src={imageUrl} alt="صورة الأوردر المطلوبة" className="w-full h-auto max-h-52 object-cover rounded-xl" />
           </div>
         )}
