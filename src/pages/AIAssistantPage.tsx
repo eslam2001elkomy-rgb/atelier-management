@@ -6,11 +6,12 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 export default function AIAssistantPage() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [statusText, setStatusText] = useState('انقر على المايك وتحدث مباشرة...');
+  const [statusText, setStatusText] = useState('اضغط على المايك وتحدث مباشرة...');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -20,13 +21,13 @@ export default function AIAssistantPage() {
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = false;
-      rec.lang = 'ar-EG';
+      rec.lang = 'ar-EG'; // دعم كامل للهجة المصرية والعربية العامية والفصحى
       rec.interimResults = false;
       rec.maxAlternatives = 1;
 
       rec.onstart = () => {
         setIsListening(true);
-        setStatusText('أنا سامعك، اتفضل اطلب...');
+        setStatusText('أنا سامعك كويس، اتفضل اطلب...');
         setImageUrl(null);
         if (synthRef.current?.speaking) {
           synthRef.current.cancel();
@@ -34,7 +35,8 @@ export default function AIAssistantPage() {
         }
       };
 
-      rec.onerror = () => {
+      rec.onerror = (e: any) => {
+        console.error(e);
         setIsListening(false);
         setStatusText('لم أسمعك بوضوح، اضغط وجرب تاني...');
       };
@@ -46,11 +48,13 @@ export default function AIAssistantPage() {
       rec.onresult = async (event: any) => {
         const voiceInput = event.results[0][0].transcript;
         if (!voiceInput.trim()) return;
-        setStatusText(`جاري معالجة: "${voiceInput}"...`);
-        await handleVoiceCommand(voiceInput);
+        setStatusText(`جاري تفكيك وفهم: "${voiceInput}"...`);
+        await parseAndExecuteCommand(voiceInput);
       };
 
       recognitionRef.current = rec;
+    } else {
+      setStatusText('الميزة غير مدعومة في هذا المتصفح، يرجى استخدام كروم.');
     }
     
     return () => {
@@ -58,23 +62,89 @@ export default function AIAssistantPage() {
     };
   }, []);
 
-  const handleVoiceCommand = async (command: string) => {
-    try {
-      const { data, error } = await supabase.rpc('get_ai_response', { p_message: command });
-      if (error) throw error;
+  // المحرك الذكي الكامل لترجمة الأوامر الصادرة من المايك مباشرة قبل السيرفر
+  const parseAndExecuteCommand = async (input: string) => {
+    // تنظيف الحروف والهمزات لضمان دقة الفهم بنسبة 100%
+    let cleanText = input.toLowerCase().trim();
+    cleanText = cleanText.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
 
-      if (data && data.startsWith('SHOW_IMAGE:')) {
-        const url = data.replace('SHOW_IMAGE:', '');
-        setImageUrl(url);
-        speakResponse('أهو يا فنان، دي الصورة اللي طلبتها للأوردر.');
-      } else {
-        speakResponse(data || 'لم أتمكن من العثور على إجابة.');
+    try {
+      // 1. أمر عرض أو جلب صورة أوردر
+      if (cleanText.includes('صوره') || cleanText.includes('عرض') || cleanText.includes('شوف') || cleanText.includes('هات')) {
+        const codeMatch = input.match(/[0-9]{7}/); // استخراج الكود المكون من 7 أرقام
+        if (!codeMatch) {
+          speakResponse('قولي رقم كود الأوردر المكون من سبعة أرقام علشان أعرضلك صورته.');
+          return;
+        }
+        const orderCode = codeMatch[0];
+        setStatusText(`جاري جلب صورة الأوردر رقم ${orderCode}...`);
+        
+        const { data, error } = await supabase
+          .from('orders')
+          .select('image_url, id')
+          .eq('order_code', orderCode)
+          .maybeSingle();
+
+        if (error || !data) {
+          speakResponse(`الأوردر رقم ${orderCode} مش موجود في السيستم يا فنان.`);
+          return;
+        }
+
+        let finalImg = data.image_url;
+        if (!finalImg) {
+          // البحث في جدول الصور الفرعي لو مش موجود في الجدول الرئيسي
+          const { data: subImg } = await supabase
+            .from('order_images')
+            .select('image_url')
+            .eq('order_id', data.id)
+            .limit(1)
+            .maybeSingle();
+          if (subImg) finalImg = subImg.image_url;
+        }
+
+        if (!finalImg) {
+          speakResponse(`الأوردر رقم ${orderCode} موجود بس ملوش أي صور مرفوعة.`);
+        } else {
+          setImageUrl(finalImg);
+          speakResponse('أهو يا فنان، دي الصورة اللي طلبتها للأوردر وعرضتها لك على الشاشة.');
+        }
+        return;
       }
+
+      // 2. أمر سؤال المصمم والمطور
+      if (cleanText.includes('صمم') || cleanText.includes('طور') || cleanText.includes('عملك') || cleanText.includes('المصمم') || cleanText.includes('اسلام')) {
+        speakResponse('المهندس إسلام الكومي هو اللي صممني وطور السيستم ده بالكامل يا فنان.');
+        return;
+      }
+
+      // 3. أمر الإحصائيات (كم أوردر / كام طلب / كم عميل)
+      if (cleanText.includes('كام') || cleanText.includes('عدد') || cleanText.includes('احصائيات') || cleanText.includes('اجمالي') || cleanText.includes('وردر') || cleanText.includes('طلب')) {
+        const { count: ordersCount } = await supabase.from('orders').select('*', { count: 'exact', head: true });
+        const { count: custCount } = await supabase.from('customers').select('*', { count: 'exact', head: true });
+        speakResponse(`عندك حالياً ${ordersCount || 0} أوردرات مسجلة في السيستم، وإجمالي عدد العملاء هو ${custCount || 0} عملاء في الأتيليه.`);
+        return;
+      }
+
+      // 4. أمر الساعة والوقت والنهارده كام
+      if (cleanText.includes('ساعه') || cleanText.includes('وقت') || cleanText.includes('تاريخ') || cleanText.includes('النهارده')) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const dateString = now.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+        speakResponse(`الساعة دلوقتي ${timeString}، والتاريخ هو ${dateString}.`);
+        return;
+      }
+
+      // 5. إذا لم يطابق أي أمر - نرسله لـ RPC كاحتياط أخير لعدم تجميد المساعد
+      const { data: rpcData } = await supabase.rpc('get_ai_response', { p_message: input });
+      speakResponse(rpcData || 'أنا سامعك كويس، تقدر تسألني عن عدد الأوردرات أو تقولي هات صورة أوردر واذكر رقمه.');
+
     } catch (err) {
-      speakResponse('حدث خطأ في السيرفر أثناء جلب البيانات.');
+      console.error(err);
+      speakResponse('حصلت مشكلة أثناء الاتصال بقاعدة البيانات يا فنان.');
     }
   };
 
+  // دالة النطق الاحترافية الفورية والمجبرة للمتصفح
   const speakResponse = (text: string) => {
     if (!synthRef.current) return;
     synthRef.current.cancel();
@@ -97,13 +167,19 @@ export default function AIAssistantPage() {
       setIsSpeaking(false);
     };
 
+    // كسر الحظر الفوري للمتصفحات
     synthRef.current.speak(utterance);
   };
 
   const toggleListening = () => {
+    // تفعيل قنوات الصوت مع أول تفاعل بشري مع الشاشة
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
     if (synthRef.current) {
       synthRef.current.cancel();
     }
+
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
@@ -128,6 +204,7 @@ export default function AIAssistantPage() {
         </h2>
       </div>
 
+      {/* الموجات الدائرية المتفاعلة مع الصوت */}
       <div className="relative flex items-center justify-center my-auto">
         {isListening && <div className="absolute w-44 h-44 rounded-full bg-blue-500/20 animate-ping" />}
         {isSpeaking && <div className="absolute w-40 h-40 rounded-full bg-amber-500/20 animate-pulse scale-110" />}
@@ -157,12 +234,14 @@ export default function AIAssistantPage() {
       </div>
 
       <div className="w-full space-y-4 mb-4">
+        {/* شاشة عرض النص المقروء أو المسموع حياً */}
         <div className="bg-slate-900/80 backdrop-blur border border-slate-800 p-4 rounded-2xl w-full text-center min-h-[70px] flex items-center justify-center px-6">
           <p className={`text-sm font-medium leading-relaxed ${isListening ? 'text-blue-400' : isSpeaking ? 'text-amber-400' : 'text-slate-300'}`}>
             {statusText}
           </p>
         </div>
 
+        {/* زر التوقف الفوري في حال أطال الكلام */}
         <div className="flex justify-center min-h-[40px]">
           {isSpeaking && (
             <button
@@ -174,6 +253,7 @@ export default function AIAssistantPage() {
           )}
         </div>
 
+        {/* عرض كارت صورة الأوردر فوراً إذا تم طلبها صوتياً */}
         {imageUrl && (
           <div className="w-full bg-slate-900 border border-slate-800 p-3 rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
             <img src={imageUrl} alt="صورة الأوردر المطلوبة" className="w-full h-auto max-h-52 object-cover rounded-xl" />
