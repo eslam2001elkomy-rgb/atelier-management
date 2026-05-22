@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderByCode } from '../lib/database';
-import { Lock, User, Search, Scissors } from 'lucide-react';
+import { Lock, User, Search, Scissors, Calendar, Clock, DollarSign, FileText } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -10,7 +10,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [trackCode, setTrackCode] = useState('');
-  const [trackResult, setTrackResult] = useState<{ customer_name: string; status: string } | null>(null);
+  
+  // تحديث الـ Interface ليشمل كل بيانات الأوردر والصورة والسعر
+  const [trackResult, setTrackResult] = useState<{ 
+    customer_name: string; 
+    status: string;
+    price?: number;
+    delivery_date?: string;
+    delivery_time?: string;
+    notes?: string;
+    image_url?: string;
+  } | null>(null);
+  
   const [trackError, setTrackError] = useState('');
   const [trackLoading, setTrackLoading] = useState(false);
 
@@ -46,7 +57,7 @@ export default function LoginPage() {
   const statusLabels: Record<string, string> = {
     pending: 'قيد الانتظار',
     in_progress: 'قيد التنفيذ',
-    ready: 'جاهز',
+    ready: 'جاهز للاستلام',
     delivered: 'تم التسليم',
   };
 
@@ -73,6 +84,7 @@ export default function LoginPage() {
           <p className="text-gray-400">نظام إدارة الطلبات والعملاء</p>
         </div>
 
+        {/* كرت تسجيل الدخول للأدمن */}
         <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 shadow-2xl mb-6">
           <h2 className="text-xl font-semibold text-white mb-6 text-center">تسجيل الدخول</h2>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -117,6 +129,7 @@ export default function LoginPage() {
           </form>
         </div>
 
+        {/* كرت تتبع الطلبات للزبائن */}
         <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 shadow-2xl">
           <h2 className="text-lg font-semibold text-white mb-4 text-center flex items-center justify-center gap-2">
             <Search className="w-5 h-5 text-amber-500" />
@@ -140,20 +153,59 @@ export default function LoginPage() {
                 {trackError}
               </div>
             )}
+            
+            {/* عرض نتائج التتبع بالتفصيل الكامل والعملة المصرية */}
             {trackResult && (
-              <div className="bg-[#1a1a2e] border border-gray-700 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-sm">اسم العميل</span>
+              <div className="bg-[#1a1a2e] border border-gray-700 rounded-xl p-5 space-y-3.5 text-right">
+                <h3 className="text-amber-500 font-bold text-center border-b border-gray-800 pb-2 text-base">تفاصيل أوردر الأتيليه</h3>
+                
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400 flex items-center gap-1.5"><User className="w-4 h-4 text-gray-500" /> اسم العميل</span>
                   <span className="text-white font-medium">{trackResult.customer_name}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-sm">حالة الطلب</span>
-                  <span className={`px-3 py-1 rounded-full text-sm border ${statusColors[trackResult.status] || ''}`}>
+                
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400 flex items-center gap-1.5"><Scissors className="w-4 h-4 text-gray-500" /> حالة الطلب</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs border ${statusColors[trackResult.status] || ''}`}>
                     {statusLabels[trackResult.status] || trackResult.status}
                   </span>
                 </div>
+
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400 flex items-center gap-1.5"><DollarSign className="w-4 h-4 text-gray-500" /> المبلغ المراد سداده</span>
+                  {/* تحويل العملة لـ ج.م */}
+                  <span className="text-amber-500 font-bold">{trackResult.price ? Number(trackResult.price).toLocaleString() : 0} ج.م</span>
+                </div>
+
+                {trackResult.delivery_date && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-400 flex items-center gap-1.5"><Calendar className="w-4 h-4 text-gray-500" /> تاريخ الاستلام المتوقع</span>
+                    <span className="text-white font-mono flex items-center gap-1">
+                      {trackResult.delivery_date}
+                      {trackResult.delivery_time && <span className="text-gray-500 flex items-center"><Clock className="w-3.5 h-3.5 mr-1" />{trackResult.delivery_time}</span>}
+                    </span>
+                  </div>
+                )}
+
+                {trackResult.notes && (
+                  <div className="pt-2 border-t border-gray-800 text-sm">
+                    <span className="text-gray-400 flex items-center gap-1.5 mb-1"><FileText className="w-4 h-4 text-gray-500" /> ملاحظات أو مقاسات:</span>
+                    <p className="text-gray-300 bg-black/30 p-2.5 rounded-lg text-xs leading-relaxed">{trackResult.notes}</p>
+                  </div>
+                )}
+
+                {/* عرض صورة الموديل أو الفستان للزبون */}
+                {trackResult.image_url && (
+                  <div className="pt-2 border-t border-gray-800">
+                    <span className="text-gray-400 text-xs block mb-1.5 text-center">صورة التصميم المعتمد</span>
+                    <div className="rounded-xl overflow-hidden border border-gray-800 h-44 bg-black/50 flex items-center justify-center">
+                      <img src={trackResult.image_url} alt="تصميم الموديل" className="w-full h-full object-contain" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+
             <button
               type="submit"
               disabled={trackLoading}
