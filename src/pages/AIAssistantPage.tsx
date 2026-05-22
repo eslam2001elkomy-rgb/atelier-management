@@ -26,7 +26,7 @@ export default function AIAssistantPage() {
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null); // لعرض الصور حياً
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -84,13 +84,12 @@ export default function AIAssistantPage() {
     }
   };
 
-  // دالة النطق الإجبارية الفورية لكسر حظر المتصفحات
   const speak = (text: string) => {
     if (!synthRef.current) return;
     synthRef.current.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-EG'; // دقة النطق باللهجة المصرية والعربية المفهومة
+    utterance.lang = 'ar-EG'; 
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
@@ -105,14 +104,68 @@ export default function AIAssistantPage() {
     setMessages(prev => [...prev, { role, content, timestamp: new Date() }]);
   };
 
-  // المحرك الأساسي الضخم لتفكيك وتنفيذ أوامرك الحية
+  // محرك فك وتفسير الكلمات والأوامر (الأصلية والقوية)
   const processCommand = async (text: string): Promise<string> => {
     let lower = text.trim().toLowerCase();
+    // تحويل كل الحروف لعدم الحساسية من الإملاء الصوتي
     lower = lower.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
     
     const currentOrders = ordersRef.current;
 
-    // 1. أمر إضافة أوردر تلقائي ذكي
+    // 1. حساب الإحصائيات (كم طلب / كام اوردر)
+    if (lower.includes('كام') || lower.includes('عدد') || lower.includes('احصائيات') || lower.includes('اجمالي') || lower.includes('طلب') || lower.includes('وردر')) {
+      // لو الجملة فيها "صوره" أو "عرض" يبقى يروح لأمر الصور وميدخلش هنا
+      if (!lower.includes('صوره') && !lower.includes('عرض') && !lower.includes('شوف') && !lower.includes('هات')) {
+        const stats = await fetchOrderStats();
+        return `إجمالي الطلبات عندك هو ${stats.total || 0}، عندك في الانتظار ${stats.pending || 0}، وقيد التنفيذ ${stats.in_progress || 0}، والجاهز للتسليم هو ${stats.ready || 0}.`;
+      }
+    }
+
+    // 2. أمر عرض وجلب الصور
+    if (lower.includes('صوره') || lower.includes('عرض') || lower.includes('شوف') || lower.includes('هات')) {
+      const codeMatch = lower.match(/[0-9]{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          if (order.image_url) {
+            setCurrentImageUrl(order.image_url);
+            return `أهو يا فنان، دي الصورة اللي طلبتها للأوردر رقم ${codeMatch[0]}.`;
+          }
+          return `الأوردر رقم ${codeMatch[0]} موجود بس ملوش صور مرفوعة.`;
+        }
+        return `ملقيتش أوردر في السيستم بالكود ده ${codeMatch[0]}`;
+      }
+      
+      // بحث بالاسم
+      const nameMatch = lower.match(/(?:طلب|اوردر|لـ|باسم)\s+(.+?)(?:\s|$)/);
+      const name = nameMatch ? nameMatch[1].trim() : null;
+      if (name) {
+        const order = currentOrders.find((o: any) => o.customer_name && o.customer_name.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').includes(name));
+        if (order && order.image_url) {
+          setCurrentImageUrl(order.image_url);
+          return `أهو يا فنان، دي الصورة الخاصة بطلب العميل ${order.customer_name}`;
+        }
+        return `ملقيتش صور لطلب باسم ${name}`;
+      }
+    }
+
+    // 3. سؤال المصمم والمطور
+    if (lower.includes('صمم') || lower.includes('طور') || lower.includes('اسلام') || lower.includes('الكومي')) {
+      return 'المهندس إسلام الكومي هو اللي صممني وبناني بالكامل يا فنان.';
+    }
+
+    // 4. الحسابات والأسعار
+    if (lower.includes('سعر') || lower.includes('اسعار') || lower.includes('مبلغ') || lower.includes('فلوس')) {
+      const total = currentOrders.reduce((s: number, o: any) => s + Number(o.price || 0), 0);
+      return `إجمالي مبالغ الأوردرات المسجلة عندك هو ${total.toLocaleString()} جنيه يا فنان.`;
+    }
+
+    // 5. الوقت والساعة
+    if (lower.includes('ساعه') || lower.includes('وقت')) {
+      return `الساعة دلوقتي ${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}.`;
+    }
+
+    // 6. إضافة أوردر جديد
     if ((lower.includes('اضف') || lower.includes('سجل')) && (lower.includes('طلب') || lower.includes('اوردر'))) {
       const nameMatch = lower.match(/باسم\s+(.+?)(?:\s|$)/) || lower.match(/اسم\s+(.+?)(?:\s|$)/);
       const name = nameMatch ? nameMatch[1].trim() : null;
@@ -131,123 +184,21 @@ export default function AIAssistantPage() {
         await loadOrders();
         return `تم إنشاء طلب جديد بنجاح باسم ${name} وكود الأوردر هو ${code}`;
       }
-      return 'علشان أضيف الطلب صح، قولي: أضف طلب جديد باسم أحمد';
+      return 'قولي: أضف طلب جديد باسم أحمد';
     }
 
-    // 2. أمر عرض جلب الصور وعرضها على الشاشة فوراً
-    if (lower.includes('صور') || lower.includes('عرض') || lower.includes('شوف') || lower.includes('هات')) {
-      // البحث عن كود مكون من 7 أرقام أولاً
-      const codeMatch = lower.match(/[0-9]{7}/);
-      if (codeMatch) {
-        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
-        if (order) {
-          if (order.image_url) {
-            setCurrentImageUrl(order.image_url);
-            return `تم العثور على الصورة وعرضها للأوردر رقم ${codeMatch[0]}`;
-          }
-          return `الأوردر رقم ${codeMatch[0]} موجود بس ملوش صور مرفوعة.`;
-        }
-      }
-      
-      // البحث باسم العميل
-      const nameMatch = lower.match(/(?:طلب|اوردر|لـ|باسم)\s+(.+?)(?:\s|$)/);
-      const name = nameMatch ? nameMatch[1].trim() : null;
-      if (name) {
-        const order = currentOrders.find((o: any) => o.customer_name && o.customer_name.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').includes(name));
-        if (order) {
-          if (order.image_url) {
-            setCurrentImageUrl(order.image_url);
-            return `أهو يا فنان، دي الصور الخاصة بطلب العميل ${order.customer_name}`;
-          }
-          return `طلب ${order.customer_name} موجود في السيستم بس ملوش أي صور مسجلة.`;
-        }
-        return `ملقيتش أي طلب مسجل باسم ${name}`;
-      }
-    }
+    // إذا تاه ومفهش الجملة خالص، هيروح لـ RPC سوبابيز كحل أخير
+    try {
+      const { data } = await supabase.rpc('get_ai_response', { p_message: text });
+      if (data) return data;
+    } catch {}
 
-    // 3. أمر تسليمات الغد (بكرة)
-    if (lower.includes('هيتسلم') && (lower.includes('بكره') || lower.includes('غدا') || lower.includes('بكرا'))) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
-      const dueOrders = currentOrders.filter((o: any) => o.delivery_date === tomorrowStr);
-      if (dueOrders.length === 0) return 'مفيش أي طلبات جاهزة للتسليم بكره يا فنان.';
-      const names = dueOrders.map((o: any) => o.customer_name).join('، ');
-      return `عندك ${dueOrders.length} طلبات تسليم بكره وهما لـ: ${names}`;
-    }
-
-    // 4. تغيير حالة الأوردر
-    if (lower.includes('غير') && lower.includes('حاله')) {
-      const statusMap: Record<string, string> = {
-        'انتظار': 'pending',
-        'تنفيذ': 'in_progress',
-        'جاهز': 'ready',
-        'تسليم': 'delivered',
-      };
-      let newStatus = '';
-      for (const [key, val] of Object.entries(statusMap)) {
-        if (lower.includes(key)) { newStatus = val; break; }
-      }
-      const codeMatch = lower.match(/\d{7}/);
-      if (codeMatch && newStatus) {
-        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
-        if (order) {
-          await updateOrder(order.id, { status: newStatus });
-          await loadOrders();
-          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز للتسليم', delivered: 'تم التسليم' };
-          return `تم تحديث حالة الطلب رقم ${order.order_code} بنجاح إلى ${statusLabels[newStatus]}`;
-        }
-        return `ملقيتش الطلب رقم ${codeMatch[0]}`;
-      }
-      return 'قولي رقم الطلب والحالة الجديدة؛ مثلاً: غير حالة الطلب 1234567 إلى جاهز';
-    }
-
-    // 5. أمر حذف الطلب
-    if (lower.includes('احذف') || lower.includes('امسح')) {
-      const codeMatch = lower.match(/\d{7}/);
-      if (codeMatch) {
-        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
-        if (order) {
-          await deleteOrder(order.id);
-          await loadOrders();
-          return `تم حذف الطلب رقم ${order.order_code} تماماً من حسابك.`;
-        }
-        return `لم أجد طلب مسجل بالرقم ${codeMatch[0]}`;
-      }
-    }
-
-    // 6. الإحصائيات الحية العامة (كم طلب عندي)
-    if (lower.includes('كم') || lower.includes('عدد') || lower.includes('احصائيات') || lower.includes('اجمالي')) {
-      const stats = await fetchOrderStats();
-      return `إجمالي الطلبات عندك هو ${stats.total}، المعلق في الانتظار: ${stats.pending}، قيد التنفيذ: ${stats.in_progress}، والطلبات الجاهزة: ${stats.ready}.`;
-    }
-
-    // 7. حساب المبالغ والأسعار
-    if (lower.includes('سعر') || lower.includes('اسعار') || lower.includes('مبلغ') || lower.includes('فلوس')) {
-      const total = currentOrders.reduce((s: number, o: any) => s + Number(o.price || 0), 0);
-      const pending = currentOrders.filter((o: any) => o.status === 'pending').reduce((s: number, o: any) => s + Number(o.price || 0), 0);
-      return `إجمالي مبالغ الأوردرات المسجلة: ${total.toLocaleString()} جنيه، والمبالغ المعلقة قيد الانتظار: ${pending.toLocaleString()} جنيه.`;
-    }
-
-    // 8. سؤال المطور والمصمم
-    if (lower.includes('صمم') || lower.includes('طور') || lower.includes('اسلام') || lower.includes('الكومي')) {
-      return 'المهندس إسلام الكومي هو المطور والمصمم اللي بناني وبرمجني بالكامل يا فنان.';
-    }
-
-    // 9. الساعة والوقت والتاريخ
-    if (lower.includes('ساعه') || lower.includes('وقت')) {
-      return `الساعة دلوقتي ${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}.`;
-    }
-    if (lower.includes('تاريخ') || lower.includes('النهارده') || lower.includes('يوم')) {
-      return `النهارده هو ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
-    }
-
-    return 'مرحباً بك! أنا مساعدك الصوتي الذكي، أطلب مني إحصائيات الأتيليه، أو قل: كم أوردر عندي، الساعة كام، أو اسألني عن صور الأوردرات.';
+    return 'أنا سامعك كويس، اطلب مني: كم أوردر عندي، الساعة كام، أو قولي هات صورة أوردر واذكر رقمه.';
   };
 
   const handleUserMessage = async (text: string) => {
     if (!text.trim()) return;
-    setCurrentImageUrl(null); // ريستارت للصور القديمة
+    setCurrentImageUrl(null); 
     addMessage('user', text);
     setProcessing(true);
 
@@ -265,7 +216,7 @@ export default function AIAssistantPage() {
       }
     } catch (err) {
       console.error(err);
-      addMessage('assistant', 'عذراً، حدث خطأ أثناء معالجة الطلب الصوتي.');
+      addMessage('assistant', 'عذراً، حدث خطأ أثناء المعالجة.');
     } finally {
       setProcessing(false);
     }
@@ -282,6 +233,7 @@ export default function AIAssistantPage() {
     listeningRef.current = false;
     if (recognitionRef.current) {
       recognitionRef.current.onend = null;
+      recognitionRef.current.onresult = null;
       recognitionRef.current.abort();
       recognitionRef.current = null;
     }
@@ -291,27 +243,26 @@ export default function AIAssistantPage() {
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      addMessage('assistant', 'الميزة الصوتية غير مدعومة على متصفحك الحالي، يرجى استخدام متصفح كروم.');
+      addMessage('assistant', 'الميزة الصوتية غير مدعومة على متصفحك الحالي.');
       return;
     }
 
     stopListening();
 
-    // تشغيل كاش النطق صامتاً لفتح حظر المتصفحات فور لمس الشاشة
     if (synthRef.current) {
       synthRef.current.cancel();
       synthRef.current.speak(new SpeechSynthesisUtterance(''));
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'ar-EG'; // لقط فوري دقيق للهجة المصرية والأرقام العربية
-    recognition.continuous = true;
+    recognition.lang = 'ar-EG'; 
+    recognition.continuous = false; // تحويلها لـ false يضمن لقط الجملة فوراً ومعالجتها بدون تهنيج
     recognition.interimResults = false;
 
+    // لقط النص الكامل والصحيح والنهائي فوراً
     recognition.onresult = (event: any) => {
-      const last = event.results[event.results.length - 1];
-      if (last.isFinal) {
-        const transcript = last[0].transcript.trim();
+      if (event.results && event.results[0]) {
+        const transcript = event.results[0][0].transcript.trim();
         if (transcript) {
           handleUserMessage(transcript);
         }
@@ -320,16 +271,13 @@ export default function AIAssistantPage() {
 
     recognition.onerror = (event: any) => {
       console.error(event.error);
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        setListening(false);
-        listeningRef.current = false;
-      }
+      setListening(false);
+      listeningRef.current = false;
     };
 
     recognition.onend = () => {
-      if (listeningRef.current) {
-        try { recognition.start(); } catch {}
-      }
+      setListening(false);
+      listeningRef.current = false;
     };
 
     recognitionRef.current = recognition;
@@ -355,7 +303,6 @@ export default function AIAssistantPage() {
   return (
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-180px)]" dir="rtl">
       
-      {/* تم التخلص من السطر العلوي لاسم إسلام الكومي بناءً على طلبك والواجهة بقت فخمة ونظيفة */}
       <div className="flex flex-col items-center justify-center py-8 mb-4">
         <div className="relative">
           {listening && (
@@ -381,9 +328,9 @@ export default function AIAssistantPage() {
             }`}
           >
             {listening ? (
-              <Mic className="w-9 h-9 text-black animate-pulse" />
+              <Mic className="w-9 h-9 text-black" />
             ) : speaking ? (
-              <Volume2 className="w-9 h-9 text-white animate-bounce" />
+              <Volume2 className="w-9 h-9 text-white animate-pulse" />
             ) : (
               <MicOff className="w-9 h-9 text-slate-400" />
             )}
@@ -391,17 +338,16 @@ export default function AIAssistantPage() {
         </div>
         
         <p className="text-slate-400 text-xs mt-4 tracking-wide font-medium">
-          {listening ? 'جاري الاستماع إليك... تحدث الآن' : speaking ? 'جاري نطق الإجابة صوتياً...' : 'اضغط على المايك وتحدث مباشرة'}
+          {listening ? 'جاري الاستماع... تحدث الآن' : speaking ? 'جاري نطق الإجابة...' : 'اضغط على المايك وتحدث مباشرة'}
         </p>
       </div>
 
-      {/* شاشة عرض المحادثات والرسائل المتدفقة حياً */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 px-2">
         {messages.length === 0 && (
           <div className="text-center py-12">
-            <Bot className="w-14 h-14 text-slate-700 mx-auto mb-3 animate-pulse" />
-            <p className="text-slate-400 text-sm font-bold">مرحباً بك في المساعد الصوتي الحسي</p>
-            <p className="text-slate-500 text-xs mt-1">اضغط المايك واطلب منه أي شيء بخصوص الأتيليه وسيرد عليك</p>
+            <Bot className="w-14 h-14 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-400 text-sm font-bold">مرحباً بك في المساعد الصوتي</p>
+            <p className="text-slate-500 text-xs mt-1">اضغط المايك واطلب منه أي شيء وسيرد عليك فوراً</p>
           </div>
         )}
         
@@ -423,7 +369,6 @@ export default function AIAssistantPage() {
           </div>
         ))}
 
-        {/* عرض كارت الصورة هنا فوراً إذا عثر عليها المساعد صوتياً */}
         {currentImageUrl && (
           <div className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-800 p-2.5 rounded-2xl shadow-2xl animate-fade-in mt-2">
             <div className="text-xs text-amber-400 font-bold mb-1.5 text-center">🖼️ الصورة المطلوبة للأوردر:</div>
@@ -443,7 +388,6 @@ export default function AIAssistantPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* لوحة الإدخال السفلية هجينة (صوت + كتابة) */}
       <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 shadow-inner">
         <button
           onClick={toggleListening}
@@ -466,7 +410,6 @@ export default function AIAssistantPage() {
         <button
           onClick={clearHistory}
           className="p-3 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-xl transition-all"
-          title="مسح السجل"
         >
           <Trash2 className="w-5 h-5" />
         </button>
@@ -479,13 +422,6 @@ export default function AIAssistantPage() {
           <Send className="w-5 h-5" />
         </button>
       </div>
-
-      <style>{`
-        @keyframes wave {
-          0% { height: 8px; }
-          100% { height: 28px; }
-        }
-      `}</style>
     </div>
   );
 }
