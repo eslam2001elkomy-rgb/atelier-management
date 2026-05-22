@@ -20,7 +20,7 @@ export default function AIAssistantPage() {
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = false;
-      rec.lang = 'ar-EG'; // لقط فوري للهجة المصرية والعربية
+      rec.lang = 'ar-EG'; // لقط دقيق للهجة المصرية الحية
       rec.interimResults = false;
       rec.maxAlternatives = 1;
 
@@ -35,8 +35,8 @@ export default function AIAssistantPage() {
       };
 
       rec.onerror = () => {
-        setStatusText('اضغط وتحدث مرة أخرى...');
         setIsListening(false);
+        setStatusText('لم أسمعك بوضوح، اضغط وجرب تاني...');
       };
 
       rec.onend = () => {
@@ -45,15 +45,13 @@ export default function AIAssistantPage() {
 
       rec.onresult = async (event: any) => {
         const voiceInput = event.results[0][0].transcript;
-        setStatusText(`جاري التفكير...`);
+        setStatusText('جاري الفحص والرد...');
         await handleVoiceCommand(voiceInput);
       };
 
       recognitionRef.current = rec;
-    } else {
-      setStatusText('الميزة غير مدعومة في هذا المتصفح.');
     }
-
+    
     return () => {
       if (synthRef.current) synthRef.current.cancel();
     };
@@ -67,29 +65,35 @@ export default function AIAssistantPage() {
       if (data && data.startsWith('SHOW_IMAGE:')) {
         const url = data.replace('SHOW_IMAGE:', '');
         setImageUrl(url);
-        executeVoiceOutput('أهو يا فنان، دي الصورة اللي طلبتها.');
+        forceVoiceOutput('أهو يا فنان، دي الصورة اللي طلبتها للأوردر.');
       } else {
-        executeVoiceOutput(data || 'لم أسمعك جيداً.');
+        forceVoiceOutput(data || 'لم أتمكن من العثور على إجابة.');
       }
     } catch (err) {
-      executeVoiceOutput('حدث خطأ في السيرفر يا فنان.');
+      forceVoiceOutput('حدث خطأ في السيرفر أثناء جلب البيانات.');
     }
   };
 
-  // دالة نطق إجبارية وقوية تتخطى حجب المتصفحات
-  const executeVoiceOutput = (text: string) => {
+  // دالة النطق الصارمة لكسر حماية المتصفحات على الموبايل
+  const forceVoiceOutput = (text: string) => {
     if (!synthRef.current) return;
 
-    synthRef.current.cancel(); // إلغاء أي كاش صوتي معلق فوراً
+    synthRef.current.cancel(); // تنظيف فوري ومستمر لنهش الكاش الصوتى
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-EG'; // النطق باللهجة العربية المفهومة
+    
+    // اختيار أفضل صوت عربي متاح في جهازك (موبايل أندرويد أو آيفون)
+    const voices = synthRef.current.getVoices();
+    const arabicVoice = voices.find(v => v.lang.includes('ar'));
+    if (arabicVoice) utterance.voice = arabicVoice;
+
+    utterance.lang = 'ar-EG';
     utterance.rate = 1.0; 
     utterance.pitch = 1.0;
 
     utterance.onstart = () => {
       setIsSpeaking(true);
-      setStatusText(text); // تحديث نص الشاشة للمتابعة فقط
+      setStatusText(text); // التحديث هنا عشان تشوف الرد بعينك وتسمعه بودنك
     };
 
     utterance.onend = () => {
@@ -97,27 +101,27 @@ export default function AIAssistantPage() {
       setStatusText('جاهز لأمرك القادم...');
     };
 
-    utterance.onerror = (e) => {
-      console.error('Speech error:', e);
+    utterance.onerror = () => {
       setIsSpeaking(false);
-      setStatusText('حدث خطأ أثناء نطق المساعد للرد.');
     };
 
-    // حيلة إجبارية لتشغيل الصوت في متصفحات الموبايل (Safari & Chrome Mobile)
-    setTimeout(() => {
-      synthRef.current?.speak(utterance);
-    }, 50);
+    // إجبار المتصفح على تشغيل الصوت فوراً
+    synthRef.current.speak(utterance);
   };
 
   const toggleListening = () => {
-    // تفعيل وتأشير نظام الصوت مع أول ضغطة يد حقيقية للمستخدم
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    // الحركة السحرية: تفعيل وحجز الـ Audio Context بصوت صامت مع أول ضغطة صباع حقيقية
+    if (synthRef.current) {
+      synthRef.current.cancel();
+      const silentUtterance = new SpeechSynthesisUtterance('');
+      silentUtterance.lang = 'ar-EG';
+      synthRef.current.speak(silentUtterance);
     }
 
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
+      setIsSpeaking(false);
       recognitionRef.current?.start();
     }
   };
@@ -133,14 +137,14 @@ export default function AIAssistantPage() {
   return (
     <div className="flex flex-col items-center justify-between h-[calc(100vh-140px)] max-w-xl mx-auto p-6 text-white" dir="rtl">
       
-      {/* الواجهة النظيفة: تم إلغاء السطر التعريفي العلوي تماماً */}
+      {/* اسم المساعد فقط بدون تكرار أو كلمات إضافية */}
       <div className="text-center mt-6">
         <h2 className="text-3xl font-extrabold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent tracking-wider">
           AI VOICE ASSISTANT
         </h2>
       </div>
 
-      {/* دائرة التحكم والموجات الحركية للمايك والصوت */}
+      {/* الأنيميشن الحركي للمايك والصوت */}
       <div className="relative flex items-center justify-center my-auto">
         {isListening && (
           <div className="absolute w-44 h-44 rounded-full bg-blue-500/20 animate-ping" />
@@ -173,7 +177,7 @@ export default function AIAssistantPage() {
         </button>
       </div>
 
-      {/* نصوص المتابعة وزر الإسكات الفوري */}
+      {/* صندوق مراقبة الرد وزر الإسكات الفوري */}
       <div className="w-full space-y-4 mb-4">
         
         <div className="bg-slate-900/80 backdrop-blur border border-slate-800 p-4 rounded-2xl w-full text-center min-h-[70px] flex items-center justify-center px-6 shadow-inner">
