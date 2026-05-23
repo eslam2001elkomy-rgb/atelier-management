@@ -13,7 +13,7 @@ type AssistantState =
   | 'ADDING_PRICE' 
   | 'ADDING_PAID' 
   | 'ADDING_DATE' 
-  | 'SEARCHING_ORDER';
+  | 'UPDATING_STATUS_BY_NAME'; // حالة جديدة لضمان سلاسة التحديث بالاسم
 
 type TailorCategory = 'ALL' | 'DRESS' | 'SUIT' | 'ALTERATION' | 'CUSTOM';
 
@@ -47,6 +47,7 @@ export default function AIAssistantPage() {
 
   const [displayedImages, setDisplayedImages] = useState<string[]>([]);
   const [imagesOwner, setImagesOwner] = useState<string>('');
+  const [pendingUpdateUser, setPendingUpdateUser] = useState<any>(null);
 
   const [stats, setStats] = useState({
     total: 0, pending: 0, inProgress: 0, ready: 0, delivered: 0, totalCash: 0, totalPaid: 0, remainingCash: 0, efficiencyRate: 100, activeAlerts: 0
@@ -111,49 +112,43 @@ export default function AIAssistantPage() {
 
   const parseArabicNumbers = (text: string): number => {
     const cleanText = text.trim().toLowerCase();
-    
     const match = cleanText.match(/\d+/);
     if (match) return parseInt(match[0], 10);
 
     if (cleanText.includes('ألفين') || cleanText.includes('الفين') || cleanText.includes('اتنين الف')) return 2000;
     if (cleanText.includes('ألف ونص') || cleanText.includes('الف ونص')) return 1500;
     if (cleanText.includes('ألف وربع') || cleanText.includes('الف وربع')) return 1250;
-    if (cleanText.includes('ألف') || cleanText.includes('الف')) return 1000;
-    if (cleanText.includes('تلاتة آلاف') || cleanText.includes('تلات تلاف')) return 3000;
-    if (cleanText.includes('أربعة آلاف') || cleanText.includes('اربع تلاف')) return 4000;
-    if (cleanText.includes('خمسة آلاف') || cleanText.includes('خمس تلاف')) return 5000;
-    if (cleanText.includes('خمسمية') || cleanText.includes('خمسمائة')) return 500;
-    if (cleanText.includes('تلتماية') || cleanText.includes('تلاتمية')) return 300;
-    if (cleanText.includes('ربعمية') || cleanText.includes('أرعمائة')) return 400;
-    if (cleanText.includes('ستمية')) return 600;
-    if (cleanText.includes('سبعمية')) return 700;
-    if (cleanText.includes('تمنمية')) return 800;
-    if (cleanText.includes('تسعمية')) return 900;
-    if (cleanText.includes('مية') || cleanText.includes('مائة')) return 100;
-    if (cleanText.includes('ميتين')) return 200;
-    if (cleanText.includes('بلاش') || cleanText.includes('صفر')) return 0;
-
+    if (cleanText.includes('ألف')) return 1000;
+    if (cleanText.includes('تلات تلاف') || cleanText.includes('تلاتة آلاف')) return 3000;
+    if (cleanText.includes('اربع تلاف') || cleanText.includes('أربعة آلاف')) return 4000;
+    if (cleanText.includes('خمس تلاف') || cleanText.includes('خمسة آلاف')) return 5000;
+    if (cleanText.includes('خمسمية')) return 500;
+    if (cleanText.includes('تلاتمية')) return 300;
+    if (cleanText.includes('ربعمية')) return 400;
     return 0;
   };
 
-  // 🌟 التحديث النهائي: فك تشابك التواريخ وضمان عزل الأرقام 100% 🌟
+  // 🌟 محرك التاريخ العالمي - يفهم أي لغة أو صياغة متشقلبة 🌟
   const parseArabicSpeechToDate = (speech: string): string => {
+    // تحويل الأرقام الهندية والشرقية للعربية القياسية
     let cleanSpeech = speech
-      .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+      .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+      .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
 
-    // فرتك أي علامات مائلة أو نصوص زيادة وحولها لمسافات للفصل بين الأرقام
-    cleanSpeech = cleanSpeech
-      .replace(/[\/\-\.]/g, ' ')
-      .replace(/شهر|سنة|عام|يوم|من|في|سنه/gi, ' ')
+    // تنظيف علامات الشطب والحشو وتحويلها لمسافات صريحة لعزل الأرقام
+    let spaceIsolated = cleanSpeech
+      .replace(/[\/\-\.\\]/g, ' ')
+      .replace(/شهر|سنة|عام|يوم|من|في|سنه|ميعاد|التسليم/gi, ' ')
       .trim();
 
-    const numbers = cleanSpeech.match(/\d+/g);
+    const numbers = spaceIsolated.match(/\d+/g);
     
     if (numbers && numbers.length >= 2) {
       let day = parseInt(numbers[0], 10);
       let month = parseInt(numbers[1], 10);
       let year = numbers[2] ? parseInt(numbers[2], 10) : new Date().getFullYear();
 
+      // إذا لُقطت السنة في الأول (مثل أنظمة التواريخ الأجنبية)
       if (day > 2000) { 
         const temp = day; 
         day = year; 
@@ -163,7 +158,7 @@ export default function AIAssistantPage() {
         year = month; 
         month = 11; 
       } 
-
+      // تبديل ذكي لو الشهر واليوم متبدلين
       if (month > 12 && month <= 31 && day <= 12) {
         const temp = month;
         month = day;
@@ -174,7 +169,15 @@ export default function AIAssistantPage() {
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
+
+    // خط الدفاع الأخير: محاولة جعل المتصفح يقرأ النص كتاريخ قياسي (لأي لغة ثانية)
+    const fallbackParsed = Date.parse(speech);
+    if (!isNaN(fallbackParsed)) {
+      const d = new Date(fallbackParsed);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
     
+    // الحل الإعجازي النهائي لمنع أي كراش في السيرفر
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   };
@@ -239,7 +242,6 @@ export default function AIAssistantPage() {
         const finalOrder = { ...draftRef.current, delivery_date: processedDate };
         const orderCode = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-        // الحفظ الآمن في قاعدة البيانات
         const { error } = await supabase.from('orders').insert([{
           order_code: orderCode, 
           customer_name: finalOrder.customer_name, 
@@ -264,25 +266,111 @@ export default function AIAssistantPage() {
 
       if (input.includes('إلغاء') || input.includes('اكنسل') || input.includes('خلاص') || input.includes('امسح')) {
         setGlobalState('IDLE');
+        setPendingUpdateUser(null);
         setDraftOrder({ customer_name: '', phone: '', category: 'ALL', size_chest: '', size_waist: '', size_length: '', price: 0, paid: 0, delivery_date: '', notes: '' });
         const msg = 'تم إلغاء العملية وتصفير الذاكرة المؤقتة.';
         setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
       }
 
       // ==========================================
-      // الاستعلامات والبحث
+      // 🌟 تحديث وتعديل حالة الأوردر (بالاسم أو بالكود) 🌟
+      // ==========================================
+      if (currentGlobalState === 'UPDATING_STATUS_BY_NAME' && pendingUpdateUser) {
+        let newStatus = '';
+        let statusLabel = '';
+        
+        if (input.includes('تنفيذ') || input.includes('شغال')) { newStatus = 'in_progress'; statusLabel = 'قيد التنفيذ'; }
+        else if (input.includes('جاهز') || input.includes('خلص')) { newStatus = 'ready'; statusLabel = 'جاهز للتسليم'; }
+        else if (input.includes('اتسلم') || input.includes('سلمت') || input.includes('تسليم')) { newStatus = 'delivered'; statusLabel = 'تم التسليم النهائي'; }
+        else if (input.includes('انتظار')) { newStatus = 'pending'; statusLabel = 'قيد الانتظار'; }
+
+        if (newStatus) {
+          const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', pendingUpdateUser.id);
+          if (error) throw error;
+          await fetchComprehensiveStats();
+          const msg = `تمام يا فنان، غيّرت حالة أوردر العميل ${pendingUpdateUser.customer_name} إلى: ${statusLabel}.`;
+          setAiSpeech(msg); executeVocalReply(msg);
+          setGlobalState('IDLE'); setPendingUpdateUser(null); setProcessing(false); return;
+        } else {
+          const msg = 'لم أفهم الحالة الجديدة، قول: جاهز، قيد التنفيذ، أو اتسلم.';
+          setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+        }
+      }
+
+      // لقط أمر التحديث الرئيسي
+      if (currentGlobalState === 'IDLE' && (input.includes('حدث') || input.includes('تحديث') || input.includes('غير الحالة') || input.includes('تعديل حالة') || input.includes('اتسلم'))) {
+        const code = input.match(/\d{7}/)?.[0];
+        
+        // 1. التحديث المباشر عن طريق الكود
+        if (code) {
+          let newStatus = 'pending';
+          if (input.includes('تنفيذ')) newStatus = 'in_progress';
+          if (input.includes('جاهز')) newStatus = 'ready';
+          if (input.includes('اتسلم') || input.includes('تسليم')) newStatus = 'delivered';
+
+          const { error } = await supabase.from('orders').update({ status: newStatus }).eq('order_code', code);
+          if (error) throw error;
+          await fetchComprehensiveStats();
+          const msg = `تم تحديث حالة الأوردر رقم ${code} بنجاح في قاعدة البيانات.`;
+          setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+        } 
+        
+        // 2. التحديث الذكي عن طريق الاسم (مثل: "تحديث بيانات حمدي")
+        else {
+          const cleanNameForUpdate = rawInput
+            .replace(/تحديث|بيانات|تعديل|حالة|غير|اوردر|طلب|باسم|بتاع|لجاهز|لتنفيذ/gi, '')
+            .trim();
+
+          if (!cleanNameForUpdate) {
+            const msg = 'اذكر اسم العميل أو كود الأوردر لتحديث حالته.';
+            setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+          }
+
+          const { data, error } = await supabase.from('orders').select('*').ilike('customer_name', `%${cleanNameForUpdate}%`).limit(1);
+          if (error) throw error;
+
+          if (!data || data.length === 0) {
+            const msg = `لم أجد أي أوردر باسم العميل ${cleanNameForUpdate} في السيستم لتعديله.`;
+            setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+          }
+
+          const targetOrder = data[0];
+          
+          // لو نطق الحالة مباشرة في نفس الجملة (مثال: تحديث بيانات حمدي لجاهز)
+          let quickStatus = '';
+          let quickLabel = '';
+          if (input.includes('تنفيذ')) { quickStatus = 'in_progress'; quickLabel = 'قيد التنفيذ'; }
+          if (input.includes('جاهز')) { quickStatus = 'ready'; quickLabel = 'جاهز للتسليم'; }
+          if (input.includes('اتسلم') || input.includes('تسليم')) { quickStatus = 'delivered'; quickLabel = 'تم التسليم'; }
+
+          if (quickStatus) {
+            const { error: upErr } = await supabase.from('orders').update({ status: quickStatus }).eq('id', targetOrder.id);
+            if (upErr) throw upErr;
+            await fetchComprehensiveStats();
+            const msg = `عرفته، العميل ${targetOrder.customer_name} غيّرت حالته فوراً إلى ${quickLabel}.`;
+            setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+          }
+
+          // لو نطق الاسم فقط، ننتقل لحالة الاستبيان عن الحالة الجديدة
+          setPendingUpdateUser(targetOrder);
+          setGlobalState('UPDATING_STATUS_BY_NAME');
+          const msg = `لقيت أوردر العميل ${targetOrder.customer_name}، تحب تحول حالته لإيه؟ (قيد التنفيذ، جاهز، ولا اتسلم؟)`;
+          setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
+        }
+      }
+
+      // ==========================================
+      // الاستعلامات والبحث العادي
       // ==========================================
       if (currentGlobalState === 'IDLE') {
 
         if (input.includes('اسماء') || input.includes('أسماء') || input.includes('اسم العندى') || input.includes('كل الاوردرات')) {
           const { data: allOrders, error: allErr } = await supabase.from('orders').select('customer_name');
           if (allErr) throw allErr;
-
           if (!allOrders || allOrders.length === 0) {
             const msg = 'لا توجد أي أوردرات مسجلة في النظام حالياً.';
             setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
           }
-
           const names = allOrders.map(o => o.customer_name).join(' ، و ');
           const msg = `الاوردرات المسجلة عندك هي باسم: ${names}`;
           setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
@@ -292,16 +380,13 @@ export default function AIAssistantPage() {
           const isFirst = input.includes('اول') || input.includes('أول');
           const { data: dateOrders, error: dateErr } = await supabase.from('orders').select('*').not('delivery_date', 'is', null);
           if (dateErr) throw dateErr;
-
           if (!dateOrders || dateOrders.length === 0) {
             const msg = 'لا يوجد أوردرات مسجل لها تواريخ تسليم.';
             setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
           }
-
           const sorted = [...dateOrders].sort((a, b) => String(a.delivery_date).localeCompare(String(b.delivery_date)));
           const targetOrder = isFirst ? sorted[0] : sorted[sorted.length - 1];
           const label = isFirst ? 'أول أوردر هيتسلم' : 'آخر أوردر هيتسلم';
-
           const msg = `${label} هو للعميل ${targetOrder.customer_name} وميعاده ${targetOrder.delivery_date}.`;
           setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
         }
@@ -318,12 +403,10 @@ export default function AIAssistantPage() {
 
           const { data: statusOrders, error: statusError } = await supabase.from('orders').select('*').eq('status', targetStatus);
           if (statusError) throw statusError;
-
           if (!statusOrders || statusOrders.length === 0) {
             const msg = `لا يوجد أوردرات حالياً في حالة ${statusLabel}.`;
             setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
           }
-
           const namesList = statusOrders.map(o => o.customer_name).join(' و ');
           const msg = `الأوردرات ${statusLabel} عددها ${statusOrders.length} وهي لكل من: ${namesList}`;
           setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
@@ -400,29 +483,9 @@ export default function AIAssistantPage() {
         setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
       }
 
-      if (currentGlobalState === 'IDLE' && (input.includes('حدث') || input.includes('غير الحالة') || input.includes('اتسلم'))) {
-        const code = input.match(/\d{7}/)?.[0];
-        if (!code) {
-          const msg = 'اذكر كود الأوردر المكون من 7 أرقام أولاً ليتم تحديث حالته.';
-          setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
-        }
-
-        let newStatus = 'pending';
-        if (input.includes('تنفيذ')) newStatus = 'in_progress';
-        if (input.includes('جاهز')) newStatus = 'ready';
-        if (input.includes('اتسلم') || input.includes('تسليم')) newStatus = 'delivered';
-
-        const { error } = await supabase.from('orders').update({ status: newStatus }).eq('order_code', code);
-        if (error) throw error;
-
-        await fetchComprehensiveStats();
-        const msg = `تم تحديث حالة الأوردر رقم ${code} بنجاح في قاعدة البيانات.`;
-        setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
-      }
-
     } catch (err) {
       console.error(err);
-      const msg = 'حدث خطأ غير متوقع أثناء الحفظ، جرب الإملاء مرة أخرى بصوت واضح.';
+      const msg = 'حدث خطأ في المعالجة، يرجى إعادة المحاولة بصوت واضح.';
       setAiSpeech(msg); executeVocalReply(msg);
     } finally {
       setProcessing(false);
@@ -506,7 +569,7 @@ export default function AIAssistantPage() {
           </div>
           <div>
             <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">نظام إدارة الأتيليه الذكي</h1>
-            <p className="text-[9px] text-gray-500 font-bold uppercase">تحديث صيانة محرك التواريخ والأسعار العربي</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">إصدار جبار: دعم كامل للتحديث بالاسم وحل أزمات التواريخ واللغات</p>
           </div>
         </div>
 
@@ -522,15 +585,16 @@ export default function AIAssistantPage() {
       {/* المنتصف */}
       <div className="flex flex-col items-center justify-center my-auto z-10 w-full">
         {globalState !== 'IDLE' && (
-          <div className="mb-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center gap-2 text-xs text-amber-400 font-bold shadow-md animate-bounce">
+          <div className="mb-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center gap-2 text-xs text-amber-400 font-bold shadow-md">
             <Cpu className="w-3.5 h-3.5 text-amber-500 animate-spin" />
-            تجميع البيانات: 
-            <span className="text-white underline font-black">
+            المعالج النشط: 
+            <span className="text-white underline font-black ml-1">
               {globalState === 'ADDING_NAME' && 'اسم الزبون'}
               {globalState === 'ADDING_PHONE' && 'رقم الموبايل'}
               {globalState === 'ADDING_PRICE' && 'السعر الكلي'}
               {globalState === 'ADDING_PAID' && 'العربون المقبوض'}
               {globalState === 'ADDING_DATE' && 'ميعاد التسليم'}
+              {globalState === 'UPDATING_STATUS_BY_NAME' && `تعديل حالة أوردر العميل (${pendingUpdateUser?.customer_name})`}
             </span>
           </div>
         )}
@@ -547,7 +611,7 @@ export default function AIAssistantPage() {
           {userSpeech && (
             <div className="inline-flex items-center gap-1.5 bg-[#05050a] px-3 py-1.5 rounded-xl border border-gray-900 mb-3 text-[11px] text-gray-500 italic">
               <CornerDownLeft className="w-3 h-3 text-gray-600" />
-              النص الملقوط: "{userSpeech}"
+              اللقط الفوري: "{userSpeech}"
             </div>
           )}
           <h2 className="text-sm md:text-lg font-bold tracking-wide leading-relaxed text-gray-300">{aiSpeech}</h2>
@@ -607,7 +671,7 @@ export default function AIAssistantPage() {
 
       {/* تذييل الصفحة */}
       <div className="w-full text-center border-t border-gray-900/50 pt-3.5 z-10 flex flex-col sm:flex-row items-center justify-between max-w-5xl text-[9px] text-gray-600 font-mono font-bold">
-        <p>ATELIER VIRTUAL VOICE CONSOLE v3.5.0 - ENGINE UPDATE</p>
+        <p>ATELIER VIRTUAL VOICE CONSOLE v3.6.0 - ULTIMATE ENGINE</p>
         <p className="text-gray-500 bg-gradient-to-r from-amber-500/10 to-transparent px-3 py-1 rounded-md font-sans text-[10px]">
           تطوير وتنفيذ بواسطة: <span className="text-amber-500 font-black">إسلام الكومي</span>
         </p>
