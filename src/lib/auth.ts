@@ -9,120 +9,152 @@ export interface User {
 
 async function sha256(message: string): Promise<string> {
   const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(message));
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const hashBuffer = await crypto.subtle.digest(
+    'SHA-256',
+    encoder.encode(message)
+  );
+
+  const hashArray = Array.from(
+    new Uint8Array(hashBuffer)
+  );
+
+  return hashArray
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
-const LOCAL_ADMIN: User = {
-  id: 'admin-local',
-  username: 'admin',
-  phone: '',
-  whatsapp: '',
-};
+export async function login(
+  username: string,
+  password: string
+): Promise<User | null> {
 
-export async function login(username: string, password: string): Promise<User | null> {
   try {
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPassword = password.trim();
 
-    // 1) حل مباشر مضمون للـ admin
-    if (cleanUsername === 'admin' && cleanPassword === 'admin000') {
-      try {
-        const { data } = await supabase
-          .from('users')
-          .select('id, username, phone, whatsapp')
-          .eq('username', 'admin')
-          .maybeSingle();
+    const cleanUsername =
+      username.trim().toLowerCase();
 
-        const user: User = data
-          ? {
-              id: data.id,
-              username: data.username,
-              phone: data.phone || '',
-              whatsapp: data.whatsapp || '',
-            }
-          : LOCAL_ADMIN;
+    const cleanPassword =
+      password.trim();
 
-        localStorage.setItem('atelier_user', JSON.stringify(user));
-        return user;
-      } catch {
-        localStorage.setItem('atelier_user', JSON.stringify(LOCAL_ADMIN));
-        return LOCAL_ADMIN;
-      }
-    }
-
-    // 2) باقي المستخدمين من قاعدة البيانات
     const { data, error } = await supabase
       .from('users')
       .select('*')
-      .eq('username', username)
+      .eq('username', cleanUsername)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      return null;
+    }
 
-    const hashHex = await sha256(password);
-    if (hashHex !== data.password_hash) return null;
+    const hashHex =
+      await sha256(cleanPassword);
+
+    if (hashHex !== data.password_hash) {
+      return null;
+    }
 
     const user: User = {
       id: data.id,
       username: data.username,
       phone: data.phone || '',
-      whatsapp: data.whatsapp || '',
+      whatsapp: data.whatsapp || ''
     };
 
-    localStorage.setItem('atelier_user', JSON.stringify(user));
+    localStorage.setItem(
+      'atelier_user',
+      JSON.stringify(user)
+    );
+
     return user;
+
   } catch (err) {
+
     console.error('Login error:', err);
+
     return null;
   }
 }
 
-export async function registerUser(username: string, password: string): Promise<User | null> {
+export async function registerUser(
+  username: string,
+  password: string
+): Promise<User | null> {
+
   try {
-    const hashHex = await sha256(password);
+
+    const cleanUsername =
+      username.trim().toLowerCase();
+
+    const hashHex =
+      await sha256(password);
 
     const { data, error } = await supabase
       .from('users')
-      .insert({ username, password_hash: hashHex })
+      .insert({
+        username: cleanUsername,
+        password_hash: hashHex
+      })
       .select()
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      return null;
+    }
 
     const user: User = {
       id: data.id,
       username: data.username,
       phone: '',
-      whatsapp: '',
+      whatsapp: ''
     };
 
-    localStorage.setItem('atelier_user', JSON.stringify(user));
+    localStorage.setItem(
+      'atelier_user',
+      JSON.stringify(user)
+    );
+
     return user;
+
   } catch (err) {
-    console.error('Register error:', err);
+
+    console.error(err);
+
     return null;
   }
 }
 
 export function getCurrentUser(): User | null {
-  const stored = localStorage.getItem('atelier_user');
+
+  const stored =
+    localStorage.getItem('atelier_user');
+
   if (!stored) return null;
 
   try {
+
     return JSON.parse(stored);
+
   } catch {
+
     return null;
   }
 }
 
 export function logout() {
-  localStorage.removeItem('atelier_user');
+
+  localStorage.removeItem(
+    'atelier_user'
+  );
 }
 
-export async function updateUser(id: string, updates: Partial<User>): Promise<boolean> {
+export async function updateUser(
+  id: string,
+  updates: Partial<User>
+): Promise<boolean> {
+
   try {
+
     const { error } = await supabase
       .from('users')
       .update(updates)
@@ -131,28 +163,65 @@ export async function updateUser(id: string, updates: Partial<User>): Promise<bo
     if (error) return false;
 
     const current = getCurrentUser();
+
     if (current) {
-      const updated = { ...current, ...updates };
-      localStorage.setItem('atelier_user', JSON.stringify(updated));
+
+      const updated = {
+        ...current,
+        ...updates
+      };
+
+      localStorage.setItem(
+        'atelier_user',
+        JSON.stringify(updated)
+      );
     }
 
     return true;
+
   } catch {
+
     return false;
   }
 }
 
-export async function changePassword(id: string, newPassword: string): Promise<boolean> {
+export async function changePassword(
+  id: string,
+  oldPassword: string,
+  newPassword: string
+): Promise<boolean> {
+
   try {
-    const hashHex = await sha256(newPassword);
+
+    const { data } = await supabase
+      .from('users')
+      .select('password_hash')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!data) return false;
+
+    const oldHash =
+      await sha256(oldPassword);
+
+    if (oldHash !== data.password_hash) {
+      return false;
+    }
+
+    const newHash =
+      await sha256(newPassword);
 
     const { error } = await supabase
       .from('users')
-      .update({ password_hash: hashHex })
+      .update({
+        password_hash: newHash
+      })
       .eq('id', id);
 
     return !error;
+
   } catch {
+
     return false;
   }
 }
