@@ -54,7 +54,7 @@ export default function AIAssistantPage() {
   const [globalState, setGlobalState] = useState<AssistantState>('IDLE');
   
   const [userSpeech, setUserSpeech] = useState<string>('');
-  const [aiSpeech, setAiSpeech] = useState<string>('مرحباً بك في نظام الأتمتة الإذاعي الصوتي لإدارة الأتيليه. المحرك الذكي مستقر وفي وضع الاستماع المستمر والمتتالي الآن.');
+  const [aiSpeech, setAiSpeech] = useState<string>('مرحباً بك في نظام الأتمتة الإذاعي الصوتي لإدارة الأتيليه. المحرك الذكي مستقر وفي وضع الاستماع المستمر الآن.');
   
   const [draftOrder, setDraftOrder] = useState<OrderDraft>({
     customer_name: '',
@@ -213,7 +213,7 @@ export default function AIAssistantPage() {
     setProcessing(true);
     killListeningEngineOnly();
 
-    // الحفاظ على حقوق الرد الصوتي للمهندس إسلام الكومي عند السؤال المباشر
+    // الاحتفاظ بالرد الذكي الخفي مبرمجاً فقط باسمك عند السؤال الصوتي المباشر من العميل
     if (input.includes('صممك') || input.includes('برمجك') || input.includes('مطورك') || input.includes('مين عملك') || input.includes('إسلام الكومي') || input.includes('اسلام الكومي') || input.includes('صاحب البرنامج')) {
       const devResponse = 'تم تصميم وتطوير هذا المساعد الصوتي والسيستم الذكي بالكامل وبكل فخر بواسطة الباشمهندس إسلام الكومي، خبير هندسة البرمجيات والأنظمة الذكية المتكاملة.';
       setAiSpeech(devResponse);
@@ -239,7 +239,7 @@ export default function AIAssistantPage() {
       if (input.includes('تخطي') || input.includes('لا يوجد') || input.includes('عديها')) resolvedPhone = 'بدون هاتف';
       setDraftOrder(prev => ({ ...prev, phone: resolvedPhone }));
       setGlobalState('ADDING_CATEGORY');
-      const nextStep = `حفظت رقم الموبايل. ما هو نوع التفصيل المطلوب؟ (فستان، أو بدلة، أو تعديل قماش) Rupp؟`;
+      const nextStep = `حفظت رقم الموبايل. ما هو نوع التفصيل المطلوب؟ (فستان، أو بدلة، أو تعديل قماش)؟`;
       setAiSpeech(nextStep);
       executeVocalReply(nextStep);
       setProcessing(false);
@@ -272,9 +272,9 @@ export default function AIAssistantPage() {
     }
 
     if (currentGlobalState === 'ADDING_SIZE_WAIST') {
-      setDraftOrder(prev => ({ ...prev, size_waist: rawInput }));
-      setGlobalState('ADDING_SIZE_LENGTH');
-      const nextStep = `تمام، تم الحفظ. قولي الآن الطول الكلي المطلوب كام بالسم؟`;
+      setDraftOrder(prev => ({ ...prev, size_length: rawInput }));
+      setGlobalState('ADDING_PRICE');
+      const nextStep = `تمام، تم الحفظ. قولي الآن السعر المالي الإجمالي المطلوب للأوردر كام جنيه؟`;
       setAiSpeech(nextStep);
       executeVocalReply(nextStep);
       setProcessing(false);
@@ -515,7 +515,7 @@ export default function AIAssistantPage() {
       const now = new Date();
       const currentFormattedTime = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
       const currentFormattedDate = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const responseText = `الوقت الحالي هو ${currentFormattedTime}، والاليوم هو ${currentFormattedDate}. ونواة النظام الصوتي تعمل بكفاءة تامة.`;
+      const responseText = `الوقت الحالي هو ${currentFormattedTime}، واليوم هو ${currentFormattedDate}. ونواة النظام الصوتي تعمل بكفاءة تامة.`;
       setAiSpeech(responseText);
       executeVocalReply(responseText);
       setProcessing(false);
@@ -612,7 +612,7 @@ export default function AIAssistantPage() {
       isUserTurnRef.current = true;
       setGlobalState('IDLE');
       startContinuousListening();
-      setAiSpeech('تم تشغيل المساعد الصوتي والمحادثة المتتالية اللانهائية نشطة وجاهزة الآن.');
+      setAiSpeech('تم تشغيل المساعد الصوتي والمحادثة المتتالية نشطة وجاهزة الآن.');
       executeVocalReply('المساعد جاهز ومستمر في الاستماع إليك الآن.');
       addLog('INFO', 'تم تشغيل حلقة الاستماع المستمر.');
     }
@@ -783,7 +783,7 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* تذييل الصفحة النظيف الخالي من أي تكرار */}
+      {/* تذييل الصفحة النظيف المحايد */}
       <div className="w-full text-center border-t border-gray-900/50 pt-3.5 z-10 flex flex-col sm:flex-row items-center justify-between max-w-5xl text-[9px] text-gray-600 font-mono font-bold tracking-wider">
         <p>ATELIER VIRTUAL VOICE CONSOLE v2.1.0 - SECURE NODE</p>
         <p className="text-gray-500 px-3 py-1 mt-1 sm:mt-0 font-sans text-[10px]">
