@@ -109,7 +109,6 @@ export default function AIAssistantPage() {
     synth.speak(utterance);
   };
 
-  // دالة ذكية ومحدثة لتحويل الأسعار المنطوقة إلى أرقام
   const parseArabicNumbers = (text: string): number => {
     const cleanText = text.trim().toLowerCase();
     
@@ -137,40 +136,45 @@ export default function AIAssistantPage() {
     return 0;
   };
 
-  // 🌟 الدالة العبقرية الجديدة لحل مشكلة التواريخ المنطوقة نهائياً 🌟
+  // 🌟 التحديث النهائي: فك تشابك التواريخ وضمان عزل الأرقام 100% 🌟
   const parseArabicSpeechToDate = (speech: string): string => {
-    // تنظيف النص بالكامل وتحويل الأرقام الهندية لأرقام عربية قياسية
     let cleanSpeech = speech
-      .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
-      .replace(/شهر|سنة|عام|يوم|من|في|سنه/gi, ' ') // نسف الكلمات المسببة للكراش
+      .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+
+    // فرتك أي علامات مائلة أو نصوص زيادة وحولها لمسافات للفصل بين الأرقام
+    cleanSpeech = cleanSpeech
+      .replace(/[\/\-\.]/g, ' ')
+      .replace(/شهر|سنة|عام|يوم|من|في|سنه/gi, ' ')
       .trim();
 
-    // 1. فحص لو النص المنطوق مباشر زي "25/11/2026"
-    const slashMatch = cleanSpeech.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
-    if (slashMatch) {
-      const day = slashMatch[1].padStart(2, '0');
-      const month = slashMatch[2].padStart(2, '0');
-      const year = slashMatch[3];
-      return `${year}-${month}-${day}`;
-    }
-
-    // 2. فحص استخراج الأرقام الحرة بعد تدمير الحروف الزائدة (زي: "25  11  2026")
     const numbers = cleanSpeech.match(/\d+/g);
+    
     if (numbers && numbers.length >= 2) {
       let day = parseInt(numbers[0], 10);
       let month = parseInt(numbers[1], 10);
       let year = numbers[2] ? parseInt(numbers[2], 10) : new Date().getFullYear();
 
-      // حماية الترتيب الذكي لو نطق السنة في الأول
-      if (day > 2000) { const temp = day; day = year; year = temp; }
-      if (month > 12 && month > 2000) { year = month; month = 11; } 
+      if (day > 2000) { 
+        const temp = day; 
+        day = year; 
+        year = temp; 
+      }
+      if (month > 12 && month > 2000) { 
+        year = month; 
+        month = 11; 
+      } 
+
+      if (month > 12 && month <= 31 && day <= 12) {
+        const temp = month;
+        month = day;
+        day = temp;
+      }
 
       if (day > 0 && day <= 31 && month > 0 && month <= 12) {
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
     
-    // حل احتياطي أخير لمنع أي كراش بالسيستم
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   };
@@ -235,7 +239,7 @@ export default function AIAssistantPage() {
         const finalOrder = { ...draftRef.current, delivery_date: processedDate };
         const orderCode = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-        // إرسال التاريخ الآمن والمنظف لـ Supabase
+        // الحفظ الآمن في قاعدة البيانات
         const { error } = await supabase.from('orders').insert([{
           order_code: orderCode, 
           customer_name: finalOrder.customer_name, 
