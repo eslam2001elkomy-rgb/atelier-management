@@ -334,16 +334,28 @@ export default function AIAssistantPage() {
       }
 
       // ==========================================
-      // 3️⃣ مرحلة البحث والاستعلام
+      // 3️⃣ مرحلة البحث والاستعلام المتقدم (حل مشكلة "كم أوردر")
       // ==========================================
-      if (currentGlobalState === 'IDLE' && (input.includes('ابحث') || input.includes('شوف') || input.includes('هات') || input.includes('تفاصيل') || input.includes('اوردر'))) {
+      if (currentGlobalState === 'IDLE' && (input.includes('ابحث') || input.includes('شوف') || input.includes('هات') || input.includes('تفاصيل') || input.includes('اوردر') || input.includes('كم') || input.includes('كام'))) {
+        
+        // التحقق مما إذا كان الطلب استعلاماً عن أعداد الأوردرات الإجمالية
+        if (input.includes('كم') || input.includes('كام') || input.includes('عدد')) {
+          await fetchComprehensiveStats();
+          const msg = `إجمالي الأوردرات المسجلة عندك حالياً هو ${stats.total} أوردر، منها ${stats.inProgress} قيد التنفيذ و ${stats.ready} جاهز للتسليم.`;
+          setAiSpeech(msg);
+          executeVocalReply(msg);
+          setProcessing(false);
+          return;
+        }
+
+        // البحث الطبيعي بكود الأوردر أو اسم العميل
         const code = input.match(/\d{7}/)?.[0];
         let query = supabase.from('orders').select(`*, order_images(*)`);
 
         if (code) {
           query = query.eq('order_code', code);
         } else {
-          const cleanName = rawInput.replace(/ابحث|هات|اوردر|تفاصيل|شوف|عرض/gi, '').trim();
+          const cleanName = rawInput.replace(/ابحث|هات|اوردر|تفاصيل|شوف|عرض|كم|كام|عندي/gi, '').trim();
           query = query.ilike('customer_name', `%${cleanName}%`);
         }
 
@@ -351,7 +363,7 @@ export default function AIAssistantPage() {
         if (error) throw error;
 
         if (!data || data.length === 0) {
-          const msg = 'لم أجد أي أوردر';
+          const msg = 'لم أجد أي أوردر مطابق بالاسم أو الكود المذكور.';
           setAiSpeech(msg);
           executeVocalReply(msg);
           setProcessing(false);
@@ -368,7 +380,7 @@ export default function AIAssistantPage() {
 
         let imageText = '';
         if (order.order_images && order.order_images.length > 0) {
-          imageText = ` ويوجد ${order.order_images.length} صورة`;
+          imageText = ` ويوجد له ${order.order_images.length} صورة`;
         }
 
         const msg = `العميل ${order.customer_name}. الحالة ${statusText}. السعر ${order.price} جنيه. المتبقي ${remain} جنيه.${imageText}`;
@@ -434,7 +446,7 @@ export default function AIAssistantPage() {
       const msg = 'حدث خطأ أثناء تنفيذ الطلب';
       setAiSpeech(msg);
       executeVocalReply(msg);
-    } {
+    } finally {
       setProcessing(false);
     }
   };
