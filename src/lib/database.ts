@@ -308,3 +308,15 @@ export async function upsertSetting(userId: string, key: string, value: string) 
   if (error) throw error;
   return data;
 }
+
+// 🔥 15. الدالة الجديدة لربط المساعد الذكي بالـ RPC في سوبابيز فوراُ
+export async function askAI(message: string): Promise<string> {
+  const { data, error } = await supabase
+    .rpc('get_ai_response', { p_message: message });
+
+  if (error) {
+    console.error('خطأ في استدعاء المساعد الذكي:', error);
+    throw error;
+  }
+  return data || 'لم يتم تلقي رد من المساعد.';
+}
