@@ -30,13 +30,6 @@ interface OrderDraft {
   notes: string;
 }
 
-interface SystemLog {
-  id: string;
-  time: string;
-  type: 'INFO' | 'SUCCESS' | 'ERROR' | 'SPEECH' | 'CORE';
-  message: string;
-}
-
 export default function AIAssistantPage() {
   const { user } = useAuth();
   
@@ -116,37 +109,73 @@ export default function AIAssistantPage() {
     synth.speak(utterance);
   };
 
-  // دالة مطورة ذكياً لتنظيف وتفسير التواريخ المحكية بصوتك منعا للكراش
+  // دالة ذكية لتحويل الكلمات والأسعار العربية لنظام رقمي سليم
+  const parseArabicNumbers = (text: string): number => {
+    const cleanText = text.trim().toLowerCase();
+    
+    // إذا كان يحتوي على أرقام صريحة (مثل 2000 أو ٢٠٠٠)
+    const match = cleanText.match(/\d+/);
+    if (match) return parseInt(match[0], 10);
+
+    // تحويل الكلمات العامية المصرية لأرقام
+    if (cleanText.includes('ألفين') || cleanText.includes('الفين')) return 2000;
+    if (cleanText.includes('ألف ونص') || cleanText.includes('الف ونص')) return 1500;
+    if (cleanText.includes('ألف وربع') || cleanText.includes('الف وربع')) return 1250;
+    if (cleanText.includes('ألف') || cleanText.includes('الف')) return 1000;
+    if (cleanText.includes('تلاتة آلاف') || cleanText.includes('تلات تلاف')) return 3000;
+    if (cleanText.includes('أربعة آلاف') || cleanText.includes('اربع تلاف')) return 4000;
+    if (cleanText.includes('خمسة آلاف') || cleanText.includes('خمس تلاف')) return 5000;
+    if (cleanText.includes('خمسمية') || cleanText.includes('خمسمائة')) return 500;
+    if (cleanText.includes('تلتماية') || cleanText.includes('تلاتمية')) return 300;
+    if (cleanText.includes('ربعمية') || cleanText.includes('أرعمائة')) return 400;
+    if (cleanText.includes('ستمية')) return 600;
+    if (cleanText.includes('سبعمية')) return 700;
+    if (cleanText.includes('تمنمية')) return 800;
+    if (cleanText.includes('تسعمية')) return 900;
+    if (cleanText.includes('مية') || cleanText.includes('مائة')) return 100;
+    if (cleanText.includes('ميتين')) return 200;
+    if (cleanText.includes('بلاش') || cleanText.includes('صفر')) return 0;
+
+    return 0;
+  };
+
+  // دالة إعادة هيكلة وتشكيل التاريخ ليتوافق مع الـ Supabase (YYYY-MM-DD)
   const parseArabicSpeechToDate = (speech: string): string => {
-    // إذا كان المايك لقط التاريخ جاهز برموز كشرطات أو سلاشات
-    const standardDateMatch = speech.match(/(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/) || speech.match(/(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/);
-    if (standardDateMatch) {
-      if (standardDateMatch[1].length === 4) {
-        return `${standardDateMatch[1]}-${standardDateMatch[2].padStart(2, '0')}-${standardDateMatch[3].padStart(2, '0')}`;
-      } else {
-        return `${standardDateMatch[3]}-${standardDateMatch[2].padStart(2, '0')}-${standardDateMatch[1].padStart(2, '0')}`;
-      }
+    const cleanSpeech = speech.replace(/['"']/g, '').trim();
+
+    // 1. معالجة الصيغة القياسية السلاشية المباشرة "25/11/2026"
+    const slashMatch = cleanSpeech.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+    if (slashMatch) {
+      const day = slashMatch[1].padStart(2, '0');
+      const month = slashMatch[2].padStart(2, '0');
+      const year = slashMatch[3];
+      return `${year}-${month}-${day}`; // النتيجة: "2026-11-25"
     }
 
-    // استخراج كافة الأرقام من النطق الصوتي (مثل: خمسة وعشرين حداشر الفين ستة وعشرين)
-    const numbers = speech.match(/\d+/g);
+    // 2. معالجة لو الصيغة معكوسة بالسيرفر "2026/11/25"
+    const reverseSlashMatch = cleanSpeech.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+    if (reverseSlashMatch) {
+      return `${reverseSlashMatch[1]}-${reverseSlashMatch[2].padStart(2, '0')}-${reverseSlashMatch[3].padStart(2, '0')}`;
+    }
+
+    // 3. تحليل الكلمات النصية المنطوقة بالبلدي
+    const numbers = cleanSpeech.match(/\d+/g);
     if (numbers && numbers.length >= 2) {
       let day = parseInt(numbers[0], 10);
       let month = parseInt(numbers[1], 10);
       let year = numbers[2] ? parseInt(numbers[2], 10) : new Date().getFullYear();
 
-      // تصحيح الأوضاع لو تم نطق السنة في البداية أو النهاية
-      if (day > 2000) { let temp = day; day = year; year = temp; }
+      if (day > 2000) { const temp = day; day = year; year = temp; }
       if (month > 12 && month > 2000) { year = month; month = 11; } 
 
-      // التأكد من النطاقات المنطقية للتاريخ
       if (day > 0 && day <= 31 && month > 0 && month <= 12) {
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
     
-    // إذا تعذر الفرز تماماً، يتم إرجاع النص المدخل كما هو أو تاريخ افتراضي آمن لتجنب كسر السيرفر
-    return speech;
+    // تاريخ اليوم الافتراضي كحماية أخيرة من الكراش
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   };
 
   const analyzeUserIntent = async (rawInput: string) => {
@@ -189,27 +218,27 @@ export default function AIAssistantPage() {
       }
 
       if (currentGlobalState === 'ADDING_PRICE') {
-        const num = Number(input.match(/\d+/)?.[0] || 0);
+        const num = parseArabicNumbers(rawInput);
         setDraftOrder(prev => ({ ...prev, price: num }));
         setGlobalState('ADDING_PAID');
-        const msg = 'العميل دفع كام عربون';
+        const msg = `سجلت السعر ${num} جنيه. العميل دفع كام عربون؟`;
         setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
       }
 
       if (currentGlobalState === 'ADDING_PAID') {
-        const num = Number(input.match(/\d+/)?.[0] || 0);
+        const num = parseArabicNumbers(rawInput);
         setDraftOrder(prev => ({ ...prev, paid: num }));
         setGlobalState('ADDING_DATE');
-        const msg = 'قول تاريخ أو وقت التسليم';
+        const msg = 'قول تاريخ التسليم كام كام بالظبط';
         setAiSpeech(msg); executeVocalReply(msg); setProcessing(false); return;
       }
 
       if (currentGlobalState === 'ADDING_DATE') {
-        // معالجة وحل مشكلة قراءة التواريخ والأرقام الطويلة هنا
         const processedDate = parseArabicSpeechToDate(rawInput);
         const finalOrder = { ...draftRef.current, delivery_date: processedDate };
         const orderCode = Math.floor(1000000 + Math.random() * 9000000).toString();
 
+        // الرفع بأمان تام لصيغة التواريخ المتوافقة
         const { error } = await supabase.from('orders').insert([{
           order_code: orderCode, 
           customer_name: finalOrder.customer_name, 
@@ -218,14 +247,14 @@ export default function AIAssistantPage() {
           paid: finalOrder.paid, 
           delivery_date: finalOrder.delivery_date, 
           status: 'pending', 
-          notes: 'تم إنشاؤه صوتياً'
+          notes: 'تم إنشاؤه صوتياً عبر المساعد المطور'
         }]);
 
         if (error) throw error;
         await fetchComprehensiveStats();
 
         const remain = Number(finalOrder.price) - Number(finalOrder.paid);
-        const msg = `تم إضافة الأوردر بنجاح. الكود هو ${orderCode}. وميعاد التسليم المعتمد هو ${processedDate}. المتبقي عليه ${remain} جنيه.`;
+        const msg = `تمام يا فنان، ضفت الأوردر بكود رقم ${orderCode}. وميعاد التسليم المعتمد هو ${processedDate}. والمتبقي عليه للحساب ${remain} جنيه.`;
         setAiSpeech(msg); executeVocalReply(msg);
         
         setDraftOrder({ customer_name: '', phone: '', category: 'ALL', size_chest: '', size_waist: '', size_length: '', price: 0, paid: 0, delivery_date: '', notes: '' });
@@ -240,7 +269,7 @@ export default function AIAssistantPage() {
       }
 
       // ==========================================
-      // الاستعلامات والفرز والبحث والتحليل
+      // الاستعلامات والبحث
       // ==========================================
       if (currentGlobalState === 'IDLE') {
 
@@ -392,7 +421,7 @@ export default function AIAssistantPage() {
 
     } catch (err) {
       console.error(err);
-      const msg = 'حدث خطأ في المعالجة، يرجى إعادة المحاولة.';
+      const msg = 'حدث خطأ غير متوقع أثناء الحفظ، جرب الإملاء مرة أخرى بصوت واضح.';
       setAiSpeech(msg); executeVocalReply(msg);
     } finally {
       setProcessing(false);
@@ -476,7 +505,7 @@ export default function AIAssistantPage() {
           </div>
           <div>
             <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">نظام إدارة الأتيليه الذكي</h1>
-            <p className="text-[9px] text-gray-500 font-bold uppercase">المحرك الصوتي المطور والمحدث بالكامل</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">الجيل المطور لحل مشاكل الأسعار والتواريخ</p>
           </div>
         </div>
 
@@ -494,11 +523,11 @@ export default function AIAssistantPage() {
         {globalState !== 'IDLE' && (
           <div className="mb-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center gap-2 text-xs text-amber-400 font-bold shadow-md animate-bounce">
             <Cpu className="w-3.5 h-3.5 text-amber-500 animate-spin" />
-            معالج الأتيليه النشط: 
+            تجميع البيانات: 
             <span className="text-white underline font-black">
               {globalState === 'ADDING_NAME' && 'اسم الزبون'}
               {globalState === 'ADDING_PHONE' && 'رقم الموبايل'}
-              {globalState === 'ADDING_PRICE' && 'السعر الكلي بالجنيه'}
+              {globalState === 'ADDING_PRICE' && 'السعر الكلي'}
               {globalState === 'ADDING_PAID' && 'العربون المقبوض'}
               {globalState === 'ADDING_DATE' && 'ميعاد التسليم'}
             </span>
@@ -517,7 +546,7 @@ export default function AIAssistantPage() {
           {userSpeech && (
             <div className="inline-flex items-center gap-1.5 bg-[#05050a] px-3 py-1.5 rounded-xl border border-gray-900 mb-3 text-[11px] text-gray-500 italic">
               <CornerDownLeft className="w-3 h-3 text-gray-600" />
-              المايك لقط: "{userSpeech}"
+              النص الملقوط: "{userSpeech}"
             </div>
           )}
           <h2 className="text-sm md:text-lg font-bold tracking-wide leading-relaxed text-gray-300">{aiSpeech}</h2>
@@ -577,7 +606,7 @@ export default function AIAssistantPage() {
 
       {/* تذييل الصفحة */}
       <div className="w-full text-center border-t border-gray-900/50 pt-3.5 z-10 flex flex-col sm:flex-row items-center justify-between max-w-5xl text-[9px] text-gray-600 font-mono font-bold">
-        <p>ATELIER VIRTUAL VOICE CONSOLE v3.2.0 - STABLE COMPILATION</p>
+        <p>ATELIER VIRTUAL VOICE CONSOLE v3.5.0 - ENGINE UPDATE</p>
         <p className="text-gray-500 bg-gradient-to-r from-amber-500/10 to-transparent px-3 py-1 rounded-md font-sans text-[10px]">
           تطوير وتنفيذ بواسطة: <span className="text-amber-500 font-black">إسلام الكومي</span>
         </p>
