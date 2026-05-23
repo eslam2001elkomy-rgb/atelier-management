@@ -48,17 +48,14 @@ interface SystemLog {
 export default function AIAssistantPage() {
   const { user } = useAuth();
   
-  // دالات التحكم بالحالة الحركية والرسومية للواجهة
   const [listening, setListening] = useState<boolean>(false);
   const [speaking, setSpeaking] = useState<boolean>(false);
   const [processing, setProcessing] = useState<boolean>(false);
   const [globalState, setGlobalState] = useState<AssistantState>('IDLE');
   
-  // تتبع النصوص الصادرة والملتقطة صوتياً
   const [userSpeech, setUserSpeech] = useState<string>('');
-  const [aiSpeech, setAiSpeech] = useState<string>('مرحباً بك في نظام الأتمتة الإذاعي الصوتي لإدارة أتيليه الكومي دوت كوم. المحرك الذكي مستقر وفي وضع الاستماع المستمر والمتتالي الآن.');
+  const [aiSpeech, setAiSpeech] = useState<string>('مرحباً بك في نظام الأتمتة الإذاعي الصوتي لإدارة الأتيليه. المحرك الذكي مستقر وفي وضع الاستماع المستمر والمتتالي الآن.');
   
-  // مسودة الأوردر الكلي العملاق متضمناً المقاسات التفصيلية للأتيليه
   const [draftOrder, setDraftOrder] = useState<OrderDraft>({
     customer_name: '',
     phone: '',
@@ -75,7 +72,6 @@ export default function AIAssistantPage() {
   const [updateStatusCode, setUpdateStatusCode] = useState<string>('');
   const [systemUptime, setSystemUptime] = useState<number>(0);
 
-  // العدادات الإحصائية والمالية الكاشفة لملء الشاشة وتحليل البيانات
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -89,13 +85,11 @@ export default function AIAssistantPage() {
     activeAlerts: 0
   });
 
-  // سجل المراقبة الفوري لملء الفراغ البصري وإعطاء طابع بروفيشينال هائل للموقع
   const [logs, setLogs] = useState<SystemLog[]>([
     { id: '1', time: new Date().toLocaleTimeString(), type: 'CORE', message: 'نواة النظام الصوتي مستقرة وجاهزة للربط الفريش.' },
-    { id: '2', time: new Date().toLocaleTimeString(), type: 'INFO', message: 'تطوير وهندسة برمجية: م. إسلام الكومي.' }
+    { id: '2', time: new Date().toLocaleTimeString(), type: 'INFO', message: 'تطوير وهندسة برمجية متكاملة الذكاء.' }
   ]);
 
-  // مراجع المحركات الصوتية للويب والـ Clousures اللحظية
   const recognitionRef = useRef<any>(null);
   const isUserTurnRef = useRef<boolean>(true);
   const stateRef = useRef<AssistantState>('IDLE');
@@ -103,7 +97,6 @@ export default function AIAssistantPage() {
   const updateCodeRef = useRef<string>('');
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // مزامنة المراجع في كل ريندر لضمان دقة الاستقبال البرمجي
   useEffect(() => { stateRef.current = globalState; }, [globalState]);
   useEffect(() => { draftRef.current = draftOrder; }, [draftOrder]);
   useEffect(() => { updateCodeRef.current = updateStatusCode; }, [updateStatusCode]);
@@ -112,7 +105,6 @@ export default function AIAssistantPage() {
     addLog('CORE', 'بدء الاتصال بخوادم سوبابيز الرئيسية لجلب البيانات المالية...');
     fetchComprehensiveStats();
     
-    // تشغيل تايمر تتبع تشغيل النظام لزيادة أسطر الملف البرمجي وكفاءة العرض
     const uptimeInterval = setInterval(() => {
       setSystemUptime(prev => prev + 1);
     }, 1000);
@@ -165,7 +157,6 @@ export default function AIAssistantPage() {
     }
   };
 
-  // محرك النطق والأداء الصوتي (Text to Speech Audio Engine)
   const executeVocalReply = (text: string) => {
     const synth = window.speechSynthesis;
     if (!synth) {
@@ -181,7 +172,7 @@ export default function AIAssistantPage() {
       .replace(/[*\-_#]/g, "");
     
     const utterance = new SpeechSynthesisUtterance(filteredText);
-    utterance.lang = 'ar-EG'; // الهوية المصرية للرد الصوتي
+    utterance.lang = 'ar-EG'; 
     utterance.rate = 1.02;
     utterance.pitch = 1.0;
     activeUtteranceRef.current = utterance;
@@ -196,7 +187,6 @@ export default function AIAssistantPage() {
       setSpeaking(false);
       isUserTurnRef.current = true;
       activeUtteranceRef.current = null;
-      // ✨ إعادة تشغيل حلقة الاستماع تلقائياً لضمان المحادثة المستمرة المتتالية دون توقف
       setTimeout(() => {
         if (isUserTurnRef.current) {
           startContinuousListening();
@@ -215,7 +205,6 @@ export default function AIAssistantPage() {
     synth.speak(utterance);
   };
 
-  // معالج الجمل وتحليل النوايا الصوتية الفريش (Intent Analysis Hub)
   const analyzeUserIntent = async (rawInput: string) => {
     const input = rawInput.trim().toLowerCase();
     if (!input) return;
@@ -224,9 +213,7 @@ export default function AIAssistantPage() {
     setProcessing(true);
     killListeningEngineOnly();
 
-    // -----------------------------------------------------------------
-    // صمام حماية هوية مطور النظام المهندس إسلام الكومي
-    // -----------------------------------------------------------------
+    // الحفاظ على حقوق الرد الصوتي للمهندس إسلام الكومي عند السؤال المباشر
     if (input.includes('صممك') || input.includes('برمجك') || input.includes('مطورك') || input.includes('مين عملك') || input.includes('إسلام الكومي') || input.includes('اسلام الكومي') || input.includes('صاحب البرنامج')) {
       const devResponse = 'تم تصميم وتطوير هذا المساعد الصوتي والسيستم الذكي بالكامل وبكل فخر بواسطة الباشمهندس إسلام الكومي، خبير هندسة البرمجيات والأنظمة الذكية المتكاملة.';
       setAiSpeech(devResponse);
@@ -237,9 +224,6 @@ export default function AIAssistantPage() {
 
     const currentGlobalState = stateRef.current;
 
-    // -----------------------------------------------------------------
-    // معالجة مراحل آلة ملء بيانات الأوردر والمقاسات التفصيلية للأتيليه
-    // -----------------------------------------------------------------
     if (currentGlobalState === 'ADDING_NAME') {
       setDraftOrder(prev => ({ ...prev, customer_name: rawInput }));
       setGlobalState('ADDING_PHONE');
@@ -255,7 +239,7 @@ export default function AIAssistantPage() {
       if (input.includes('تخطي') || input.includes('لا يوجد') || input.includes('عديها')) resolvedPhone = 'بدون هاتف';
       setDraftOrder(prev => ({ ...prev, phone: resolvedPhone }));
       setGlobalState('ADDING_CATEGORY');
-      const nextStep = `حفظت رقم الموبايل. ما هو نوع التفصيل المطلوب؟ (فستان، أو بدلة، أو تعديل قماش)؟`;
+      const nextStep = `حفظت رقم الموبايل. ما هو نوع التفصيل المطلوب؟ (فستان، أو بدلة، أو تعديل قماش) Rupp؟`;
       setAiSpeech(nextStep);
       executeVocalReply(nextStep);
       setProcessing(false);
@@ -290,7 +274,7 @@ export default function AIAssistantPage() {
     if (currentGlobalState === 'ADDING_SIZE_WAIST') {
       setDraftOrder(prev => ({ ...prev, size_waist: rawInput }));
       setGlobalState('ADDING_SIZE_LENGTH');
-      const nextStep = `تمام، تم الحفظ. قولي الآن الطول الكلي المطلوب للفستان أو البدلة كام بالسم؟`;
+      const nextStep = `تمام، تم الحفظ. قولي الآن الطول الكلي المطلوب كام بالسم؟`;
       setAiSpeech(nextStep);
       executeVocalReply(nextStep);
       setProcessing(false);
@@ -337,8 +321,6 @@ export default function AIAssistantPage() {
 
       try {
         addLog('INFO', 'جاري إدراج بيانات الأوردر والمقاسات التفصيلية في قاعدة البيانات...');
-        
-        // تجميع المقاسات في حقل الملاحظات لعدم تدمير الجداول القديمة بسوبابيز وثبات السيستم
         const fullNotesCombined = `مقاس الصدر: ${finalCompiledDraft.size_chest} | الوسط: ${finalCompiledDraft.size_waist} | الطول: ${finalCompiledDraft.size_length} | الفئة: ${finalCompiledDraft.category}`;
 
         const { error } = await supabase.from('orders').insert([{
@@ -354,7 +336,7 @@ export default function AIAssistantPage() {
 
         if (error) throw error;
 
-        const confirmationMsg = `تم بنجاح مطلق إنشاء أوردر العميل ${finalCompiledDraft.customer_name}. الكود السري للطلب هو ${generatedOrderCode}. السعر ${finalCompiledDraft.price} جنيه، العربون ${finalCompiledDraft.paid} جنيه، والمتبقي ${finalCompiledDraft.price - finalCompiledDraft.paid} جنيه. وتم حفظ مقاساته الخاصة بالأتيليه بالكامل فريش ونظام المحادثة مستمر وجاهز للطلب التالي.`;
+        const confirmationMsg = `تم بنجاح مطلق إنشاء أوردر العميل ${finalCompiledDraft.customer_name}. الكود السري للطلب هو ${generatedOrderCode}. السعر ${finalCompiledDraft.price} جنيه، العربون ${finalCompiledDraft.paid} جنيه، والمتبقي ${finalCompiledDraft.price - finalCompiledDraft.paid} جنيه. وتم حفظ المقاسات كاملة.`;
         
         setAiSpeech(confirmationMsg);
         executeVocalReply(confirmationMsg);
@@ -371,9 +353,6 @@ export default function AIAssistantPage() {
       return;
     }
 
-    // -----------------------------------------------------------------
-    // مسار معالج تعديل وتبديل حالة الأوردرات (Status Update Flow)
-    // -----------------------------------------------------------------
     if (currentGlobalState === 'UPDATING_STATUS_CODE') {
       const digits = input.match(/\d{7}/);
       if (!digits) {
@@ -420,7 +399,7 @@ export default function AIAssistantPage() {
 
         if (error) throw error;
 
-        const successMessage = `تم بنجاح يا فنان تحديث حالة الأوردر رقم ${targetCode} إلى: ${statusLabelAr}. البيانات محدثة لايف في السيستم الآن.`;
+        const successMessage = `تم بنجاح تحديث حالة الأوردر رقم ${targetCode} إلى: ${statusLabelAr}. البيانات محدثة لايف في السيستم الآن.`;
         setAiSpeech(successMessage);
         executeVocalReply(successMessage);
         await fetchComprehensiveStats();
@@ -436,9 +415,6 @@ export default function AIAssistantPage() {
       return;
     }
 
-    // -----------------------------------------------------------------
-    // معالجة الأوامر العامة والاستعلامات المالية والبحث في حالة الاستقرار (IDLE)
-    // -----------------------------------------------------------------
     if (input.includes('ضيف') || input.includes('سجل') || input.includes('اضف') || input.includes('عمل اوردر') || input.includes('طلب جديد') || input.includes('تفصيل جديد')) {
       const nameExtraction = rawInput.match(/(?:باسم|اسم|طلب|اوردر|عميل)\s+([^\s]+(?:\s+[^\s]+)?)/);
       const nameFound = nameExtraction ? nameExtraction[1].trim() : '';
@@ -451,7 +427,7 @@ export default function AIAssistantPage() {
         executeVocalReply(reply);
       } else {
         setGlobalState('ADDING_NAME');
-        const reply = 'أهلاً بك في معالج البيانات الفريش لأتيليه الكومي. قولي ما هو اسم العميل أولاً؟';
+        const reply = 'أهلاً بك في معالج البيانات الفريش لإدارة الأتيليه. قولي ما هو اسم العميل أولاً؟';
         setAiSpeech(reply);
         executeVocalReply(reply);
       }
@@ -494,7 +470,7 @@ export default function AIAssistantPage() {
           setAiSpeech(finalReport);
           executeVocalReply(finalReport);
         } else {
-          const missingReply = 'بحثت بكل دقة في قاعدة بيانات الأتيليه ولم أجد أي طلبات مطابقة لهذا الاسم أو الكود.';
+          const missingReply = 'بحثت بكل دقة في قاعدة البيانات ولم أجد أي طلبات مطابقة لهذا الاسم أو الكود.';
           setAiSpeech(missingReply);
           executeVocalReply(missingReply);
         }
@@ -517,7 +493,7 @@ export default function AIAssistantPage() {
 
     if (input.includes('احصائيات') || input.includes('تقرير') || input.includes('الخزنة') || input.includes('كام اوردر') || input.includes('الحسابات') || input.includes('شغلنا')) {
       await fetchComprehensiveStats();
-      const detailedVocalReport = `إليك التقرير الشامل لحسابات الأتيليه الحالية: إجمالي الأوردرات المسجلة بالداتا بيز هو ${stats.total} طلبات. مقسمة كالتالي: ${stats.pending} أوردر قيد الانتظار، و ${stats.inProgress} قيد التنفيذ بالمشغل، و ${stats.ready} جاهز ومقفل للتسليم الفوري. مالياً: إجمالي القيمة الكلية للمبيعات هي ${stats.totalCash} جنيه، حصلنا منها في الخزنة كعابين مقبوضة ${stats.totalPaid} جنيه، والمبالغ المتبقية في ذمة الزبائن خارج الأتيليه هي ${stats.remainingCash} جنيه مصري. معدل كفاءة التسليم والتشطيب بالأتيليه هو ${stats.efficiencyRate} في المائة.`;
+      const detailedVocalReport = `إليك التقرير الشامل لحسابات الأتيليه الحالية: إجمالي الأوردرات المسجلة بالداتا بيز هو ${stats.total} طلبات. مقسمة كالتالي: ${stats.pending} أوردر قيد الانتظار، و ${stats.inProgress} قيد التنفيذ بالمشغل، و ${stats.ready} جاهز ومقفل للتسليم الفوري. مالياً: إجمالي القيمة الكلية للمبيعات هي ${stats.totalCash} جنيه، حصلنا منها في الخزنة كعابين مقبوضة ${stats.totalPaid} جنيه، والمبالغ المتبقية في ذمة الزبائن خارج الأتيليه هي ${stats.remainingCash} جنيه مصري. معدل كفاءة التسليم والتشطيب هو ${stats.efficiencyRate} في المائة.`;
       setAiSpeech(detailedVocalReport);
       executeVocalReply(detailedVocalReport);
       setProcessing(false);
@@ -539,20 +515,19 @@ export default function AIAssistantPage() {
       const now = new Date();
       const currentFormattedTime = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
       const currentFormattedDate = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const responseText = `الوقت الحالي في أسيوط هو ${currentFormattedTime}، واليوم هو ${currentFormattedDate}. ونواة النظام الصوتي تعمل بكفاءة تامة تحت إشراف وتطوير المهندس إسلام الكومي.`;
+      const responseText = `الوقت الحالي هو ${currentFormattedTime}، والاليوم هو ${currentFormattedDate}. ونواة النظام الصوتي تعمل بكفاءة تامة.`;
       setAiSpeech(responseText);
       executeVocalReply(responseText);
       setProcessing(false);
       return;
     }
 
-    const fallbackReply = 'أنا في وضع الاستماع المستمر لأتيليه الكومي دوت كوم. يمكنك إلقاء أي أمر مثل: سجل أوردر جديد، كشف حساب عميل، تقرير الحسابات والخزنة، أو تحديث حالة طلب. أنا أسمعك الآن.';
+    const fallbackReply = 'أنا في وضع الاستماع المستمر لإدارة الأتيليه. يمكنك إلقاء أي أمر مثل: سجل أوردر جديد، كشف حساب عميل، تقرير الحسابات والخزنة، أو تحديث حالة طلب. أنا أسمعك الآن.';
     setAiSpeech(fallbackReply);
     executeVocalReply(fallbackReply);
     setProcessing(false);
   };
 
-  // حلقة محرك التقاط ونمذجة الصوت الويب المستمرة والدائمة (Continuous Web Speech API Listening Core)
   const startContinuousListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -591,7 +566,6 @@ export default function AIAssistantPage() {
     recognition.onend = () => {
       setListening(false);
       recognitionRef.current = null;
-      // ✨ ميزة المحادثة المستمرة اللانهائية؛ أول ما يخلص كلام، يفتح المايك تلقائياً لوحده مستني السؤال اللي بعده
       if (isUserTurnRef.current && !processing && !speaking) {
         try {
           recognition.start();
@@ -639,7 +613,7 @@ export default function AIAssistantPage() {
       setGlobalState('IDLE');
       startContinuousListening();
       setAiSpeech('تم تشغيل المساعد الصوتي والمحادثة المتتالية اللانهائية نشطة وجاهزة الآن.');
-      executeVocalReply('المساعد جاهز ومستمر في الاستماع إليك الآن يا فنان.');
+      executeVocalReply('المساعد جاهز ومستمر في الاستماع إليك الآن.');
       addLog('INFO', 'تم تشغيل حلقة الاستماع المستمر.');
     }
   };
@@ -647,19 +621,18 @@ export default function AIAssistantPage() {
   return (
     <div className="w-full h-[calc(100vh-70px)] flex flex-col justify-between items-center bg-[#020206] text-gray-100 p-5 font-sans select-none overflow-hidden relative">
       
-      {/* تأثيرات الإضاءة الخلفية لملء الفراغ البصري للمتصفح بالكامل وطابع الأتيليه السينمائي */}
       <div className="absolute top-1/4 left-1/4 w-[450px] h-[450px] bg-amber-500/5 rounded-full blur-[130px] pointer-events-none animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-[450px] h-[450px] bg-blue-500/5 rounded-full blur-[130px] pointer-events-none animate-pulse" />
 
-      {/* الرأس العلوي للنظام - التحكم والمؤشرات الفورية */}
+      {/* الرأس العلوي للنظام */}
       <div className="w-full max-w-5xl flex items-center justify-between border-b border-gray-900/50 pb-3.5 z-10">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-[#080810] rounded-xl border border-gray-800/60 shadow-inner">
             <Scissors className="w-5 h-5 text-amber-500 animate-pulse" />
           </div>
           <div>
-            <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">أتيليه الكومي دوت كوم</h1>
-            <p className="text-[9px] text-gray-500 font-bold tracking-wide uppercase">العقل الصوتي المشترك المستمر - إصدار الـ 1000 سطر</p>
+            <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">نظام إدارة الأتيليه الذكي</h1>
+            <p className="text-[9px] text-gray-500 font-bold tracking-wide uppercase">العقل الصوتي المشترك المستمر - إصدار نقي ومقفل</p>
           </div>
         </div>
 
@@ -678,10 +651,9 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* المنتصف: المحرك الدائري والزر المركزي العملاق الذي يملأ كامل شاشة الهاتف للتفاعل الاحترافي */}
+      {/* المنتصف: المحرك الدائري والزر المركزي */}
       <div className="flex flex-col items-center justify-center my-auto z-10 w-full transition-all duration-500">
         
-        {/* شاشة مراقبة معالج البيانات النشط فوق الزر الصوتي */}
         {globalState !== 'IDLE' && (
           <div className="mb-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center gap-2 text-xs text-amber-400 font-bold shadow-md animate-bounce">
             <Cpu className="w-3.5 h-3.5 text-amber-500 animate-spin" />
@@ -703,7 +675,6 @@ export default function AIAssistantPage() {
         )}
 
         <div className="relative cursor-pointer" onClick={toggleSystemMasterPower}>
-          {/* الموجات البصرية التفاعلية العملاقة لملء شاشة الهاتف بالكامل */}
           {listening && (
             <>
               <div className="absolute inset-0 -m-16 rounded-full bg-emerald-500/5 animate-ping duration-[1300ms]" />
@@ -722,7 +693,6 @@ export default function AIAssistantPage() {
             <div className="absolute inset-0 -m-8 rounded-full bg-transparent border-4 border-dashed border-amber-500/30 animate-spin duration-[3500ms]" />
           )}
 
-          {/* زر التحكم المركزي الفخم والعملاق */}
           <button
             className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-700 border-4 shadow-2xl relative z-20 ${
               listening
@@ -746,7 +716,6 @@ export default function AIAssistantPage() {
           </button>
         </div>
 
-        {/* الكلمات الملتقطة والرد الصوتي المعروض بخط سينمائي كبير في منتصف الشاشة */}
         <div className="mt-12 max-w-2xl w-full px-6 text-center transition-all duration-500">
           {userSpeech && (
             <div className="inline-flex items-center gap-1.5 bg-[#05050a] px-3 py-1.5 rounded-xl border border-gray-900 mb-4 text-[11px] text-gray-500 font-medium italic">
@@ -763,7 +732,7 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* لوحة مراقبة العدادات المالية والعددية الفورية أسفل الشاشة لملء كامل الشاشة */}
+      {/* لوحة مراقبة العدادات */}
       <div className="w-full max-w-5xl grid grid-cols-2 lg:grid-cols-4 gap-3 my-3 z-10 transition-all duration-300">
         <div className="bg-[#040408]/90 border border-gray-900 shadow p-3 rounded-xl flex items-center gap-3">
           <div className="p-1.5 bg-gray-900 rounded-lg"><Package className="w-4 h-4 text-gray-500" /></div>
@@ -795,7 +764,7 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* شاشة عرض سجل الـ System Logs في أسفل الموقع لملء الفراغ البصري وإتمام الـ 1000 سطر بنجاح */}
+      {/* سجل الـ System Logs في أسفل الموقع */}
       <div className="w-full max-w-5xl bg-[#030307] border border-gray-900/60 rounded-xl p-3 z-10 hidden md:block">
         <div className="flex items-center gap-2 mb-2 text-gray-500 text-[10px] uppercase font-black tracking-wider border-b border-gray-900 pb-1.5">
           <Sliders className="w-3 h-3 text-amber-500" />
@@ -814,11 +783,11 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* تذييل الصفحة وحفظ الحقوق البرمجية باسمك بشكل فخم */}
+      {/* تذييل الصفحة النظيف الخالي من أي تكرار */}
       <div className="w-full text-center border-t border-gray-900/50 pt-3.5 z-10 flex flex-col sm:flex-row items-center justify-between max-w-5xl text-[9px] text-gray-600 font-mono font-bold tracking-wider">
         <p>ATELIER VIRTUAL VOICE CONSOLE v2.1.0 - SECURE NODE</p>
-        <p className="text-amber-500 bg-amber-500/5 px-3 py-1 rounded-full border border-amber-500/10 mt-1 sm:mt-0 font-sans text-[10px] tracking-normal font-black">
-          تصميم وتطوير برمي: م. إسلام الكومي
+        <p className="text-gray-500 px-3 py-1 mt-1 sm:mt-0 font-sans text-[10px]">
+          نظام إدارة الأتيليه الذكي المتكامل
         </p>
       </div>
 
