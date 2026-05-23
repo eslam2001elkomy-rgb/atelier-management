@@ -109,16 +109,14 @@ export default function AIAssistantPage() {
     synth.speak(utterance);
   };
 
-  // دالة ذكية لتحويل الكلمات والأسعار العربية لنظام رقمي سليم
+  // دالة ذكية ومحدثة لتحويل الأسعار المنطوقة إلى أرقام
   const parseArabicNumbers = (text: string): number => {
     const cleanText = text.trim().toLowerCase();
     
-    // إذا كان يحتوي على أرقام صريحة (مثل 2000 أو ٢٠٠٠)
     const match = cleanText.match(/\d+/);
     if (match) return parseInt(match[0], 10);
 
-    // تحويل الكلمات العامية المصرية لأرقام
-    if (cleanText.includes('ألفين') || cleanText.includes('الفين')) return 2000;
+    if (cleanText.includes('ألفين') || cleanText.includes('الفين') || cleanText.includes('اتنين الف')) return 2000;
     if (cleanText.includes('ألف ونص') || cleanText.includes('الف ونص')) return 1500;
     if (cleanText.includes('ألف وربع') || cleanText.includes('الف وربع')) return 1250;
     if (cleanText.includes('ألف') || cleanText.includes('الف')) return 1000;
@@ -139,32 +137,31 @@ export default function AIAssistantPage() {
     return 0;
   };
 
-  // دالة إعادة هيكلة وتشكيل التاريخ ليتوافق مع الـ Supabase (YYYY-MM-DD)
+  // 🌟 الدالة العبقرية الجديدة لحل مشكلة التواريخ المنطوقة نهائياً 🌟
   const parseArabicSpeechToDate = (speech: string): string => {
-    const cleanSpeech = speech.replace(/['"']/g, '').trim();
+    // تنظيف النص بالكامل وتحويل الأرقام الهندية لأرقام عربية قياسية
+    let cleanSpeech = speech
+      .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+      .replace(/شهر|سنة|عام|يوم|من|في|سنه/gi, ' ') // نسف الكلمات المسببة للكراش
+      .trim();
 
-    // 1. معالجة الصيغة القياسية السلاشية المباشرة "25/11/2026"
+    // 1. فحص لو النص المنطوق مباشر زي "25/11/2026"
     const slashMatch = cleanSpeech.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
     if (slashMatch) {
       const day = slashMatch[1].padStart(2, '0');
       const month = slashMatch[2].padStart(2, '0');
       const year = slashMatch[3];
-      return `${year}-${month}-${day}`; // النتيجة: "2026-11-25"
+      return `${year}-${month}-${day}`;
     }
 
-    // 2. معالجة لو الصيغة معكوسة بالسيرفر "2026/11/25"
-    const reverseSlashMatch = cleanSpeech.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
-    if (reverseSlashMatch) {
-      return `${reverseSlashMatch[1]}-${reverseSlashMatch[2].padStart(2, '0')}-${reverseSlashMatch[3].padStart(2, '0')}`;
-    }
-
-    // 3. تحليل الكلمات النصية المنطوقة بالبلدي
+    // 2. فحص استخراج الأرقام الحرة بعد تدمير الحروف الزائدة (زي: "25  11  2026")
     const numbers = cleanSpeech.match(/\d+/g);
     if (numbers && numbers.length >= 2) {
       let day = parseInt(numbers[0], 10);
       let month = parseInt(numbers[1], 10);
       let year = numbers[2] ? parseInt(numbers[2], 10) : new Date().getFullYear();
 
+      // حماية الترتيب الذكي لو نطق السنة في الأول
       if (day > 2000) { const temp = day; day = year; year = temp; }
       if (month > 12 && month > 2000) { year = month; month = 11; } 
 
@@ -173,7 +170,7 @@ export default function AIAssistantPage() {
       }
     }
     
-    // تاريخ اليوم الافتراضي كحماية أخيرة من الكراش
+    // حل احتياطي أخير لمنع أي كراش بالسيستم
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   };
@@ -238,7 +235,7 @@ export default function AIAssistantPage() {
         const finalOrder = { ...draftRef.current, delivery_date: processedDate };
         const orderCode = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-        // الرفع بأمان تام لصيغة التواريخ المتوافقة
+        // إرسال التاريخ الآمن والمنظف لـ Supabase
         const { error } = await supabase.from('orders').insert([{
           order_code: orderCode, 
           customer_name: finalOrder.customer_name, 
@@ -247,7 +244,7 @@ export default function AIAssistantPage() {
           paid: finalOrder.paid, 
           delivery_date: finalOrder.delivery_date, 
           status: 'pending', 
-          notes: 'تم إنشاؤه صوتياً عبر المساعد المطور'
+          notes: 'تم إنشاؤه صوتياً عبر مساعد الكومي المطور'
         }]);
 
         if (error) throw error;
@@ -505,7 +502,7 @@ export default function AIAssistantPage() {
           </div>
           <div>
             <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">نظام إدارة الأتيليه الذكي</h1>
-            <p className="text-[9px] text-gray-500 font-bold uppercase">الجيل المطور لحل مشاكل الأسعار والتواريخ</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">تحديث صيانة محرك التواريخ والأسعار العربي</p>
           </div>
         </div>
 
