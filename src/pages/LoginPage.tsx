@@ -1,221 +1,305 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrderByCode } from '../lib/database';
-import { Lock, User, Search, Scissors, Calendar, Clock, DollarSign, FileText } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Lock, User, KeyRound, Phone, ShieldCheck, ArrowRight, Scissors } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
+  
+  // حالات تسجيل الدخول العادي
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [trackCode, setTrackCode] = useState('');
-  
-  // تحديث الـ Interface ليشمل كل بيانات الأوردر والصورة والسعر
-  const [trackResult, setTrackResult] = useState<{ 
-    customer_name: string; 
-    status: string;
-    price?: number;
-    delivery_date?: string;
-    delivery_time?: string;
-    notes?: string;
-    image_url?: string;
-  } | null>(null);
-  
-  const [trackError, setTrackError] = useState('');
-  const [trackLoading, setTrackLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // حالات استعادة كلمة المرور (OTP)
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState<'PHONE_INPUT' | 'OTP_INPUT' | 'NEW_PASSWORD_INPUT'>('PHONE_INPUT');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
+  // معالج تسجيل الدخول التقليدي
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const success = await login(username, password);
-    if (!success) {
+    try {
+      // تعديل دالة الـ login لتتناسب مع اسم المستخدم والباسورد الخاص بك
+      await login(username, password);
+    } catch (err: any) {
       setError('اسم المستخدم أو كلمة المرور غير صحيحة');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleTrack = async (e: React.FormEvent) => {
+  // 1. إرسال كود الـ 6 أرقام الحقيقي إلى الهاتف عبر Supabase Auth
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTrackError('');
-    setTrackResult(null);
-    if (trackCode.length !== 7) {
-      setTrackError('يجب إدخال كود مكون من 7 أرقام');
-      return;
+    setResetError('');
+    setResetMessage('');
+    setResetLoading(true);
+
+    // تأكيد صيغة الرقم الدولية (مثال لمصر: +20)
+    let formattedPhone = phoneNumber.trim();
+    if (formattedPhone.startsWith('01')) {
+      formattedPhone = '+20' + formattedPhone.substring(1);
     }
-    setTrackLoading(true);
-    const result = await fetchOrderByCode(trackCode);
-    if (result) {
-      setTrackResult(result);
-    } else {
-      setTrackError('لم يتم العثور على طلب بهذا الكود');
+
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: formattedPhone,
+      });
+
+      if (error) throw error;
+
+      setResetMessage('تم إرسال كود السحر المكون من 6 أرقام إلى هاتفك بنجاح.');
+      setResetStep('OTP_INPUT');
+    } catch (err: any) {
+      setResetError(err.message || 'فشل إرسال الرسالة، تأكد من تفعيل خدمة الموبايل في Supabase أو صحة الرقم');
+    } finally {
+      setResetLoading(false);
     }
-    setTrackLoading(false);
   };
 
-  const statusLabels: Record<string, string> = {
-    pending: 'قيد الانتظار',
-    in_progress: 'قيد التنفيذ',
-    ready: 'جاهز للاستلام',
-    delivered: 'تم التسليم',
+  // 2. التحقق من الكود المكون من 6 أرقام
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetMessage('');
+    setResetLoading(true);
+
+    let formattedPhone = phoneNumber.trim();
+    if (formattedPhone.startsWith('01')) {
+      formattedPhone = '+20' + formattedPhone.substring(1);
+    }
+
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: otpCode,
+        type: 'sms',
+      });
+
+      if (error) throw error;
+
+      setResetMessage('تم التحقق من الكود بنجاح! اكتب كلمة المرور الجديدة الآن.');
+      setResetStep('NEW_PASSWORD_INPUT');
+    } catch (err: any) {
+      setResetError('الكود غير صحيح أو انتهت صلاحيته، أعد المحاولة.');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
-  const statusColors: Record<string, string> = {
-    pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    in_progress: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    ready: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-    delivered: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  // 3. تعيين كلمة المرور الجديدة وحفظها
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetMessage('');
+    setResetLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      setResetMessage('تم تحديث كلمة المرور الجديدة بنجاح! يمكنك تسجيل الدخول الآن.');
+      setTimeout(() => {
+        setShowResetModal(false);
+        setResetStep('PHONE_INPUT');
+        setPhoneNumber('');
+        setOtpCode('');
+        setNewPassword('');
+      }, 2500);
+    } catch (err: any) {
+      setResetError(err.message || 'حدث خطأ أثناء حفظ كلمة المرور الجديدة.');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4" dir="rtl">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-amber-600/5 rounded-full blur-3xl" />
-      </div>
+    <div className="w-full min-h-screen flex flex-col justify-center items-center bg-[#020206] text-gray-100 p-4 font-sans relative overflow-hidden select-none">
+      <div className="absolute top-1/4 left-1/3 w-[400px] h-[400px] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 mb-4 shadow-lg shadow-amber-500/20">
-            <Scissors className="w-10 h-10 text-white" />
+      <div className="w-full max-w-md bg-[#05050b] border border-gray-900 rounded-3xl p-6 shadow-2xl relative z-10">
+        
+        {/* اللوجو */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="p-4 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl shadow-lg shadow-amber-500/10 mb-3">
+            <Scissors className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">إدارة الأتيليه</h1>
-          <p className="text-gray-400">نظام إدارة الطلبات والعملاء</p>
+          <h1 className="text-2xl font-black tracking-tight text-white">إدارة الأتيليه</h1>
+          <p className="text-xs text-gray-500 font-bold mt-1">نظام إدارة الطلبات والعملاء الذكي</p>
         </div>
 
-        {/* كرت تسجيل الدخول للأدمن */}
-        <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 shadow-2xl mb-6">
-          <h2 className="text-xl font-semibold text-white mb-6 text-center">تسجيل الدخول</h2>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">اسم المستخدم</label>
-              <div className="relative">
-                <User className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  className="w-full bg-[#1a1a2e] border border-gray-700 rounded-xl pr-11 pl-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all"
-                  placeholder="أدخل اسم المستخدم"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">كلمة المرور</label>
-              <div className="relative">
-                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-[#1a1a2e] border border-gray-700 rounded-xl pr-11 pl-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all"
-                  placeholder="أدخل كلمة المرور"
-                />
-              </div>
-            </div>
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm text-center">
-                {error}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-l from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold py-3 rounded-xl transition-all duration-200 shadow-lg shadow-amber-500/20 disabled:opacity-50"
-            >
-              {loading ? 'جاري الدخول...' : 'دخول'}
-            </button>
-          </form>
-        </div>
+        <h2 className="text-lg font-bold text-center mb-6 text-gray-200">تسجيل الدخول</h2>
 
-        {/* كرت تتبع الطلبات للزبائن */}
-        <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-6 shadow-2xl">
-          <h2 className="text-lg font-semibold text-white mb-4 text-center flex items-center justify-center gap-2">
-            <Search className="w-5 h-5 text-amber-500" />
-            تتبع الطلب
-          </h2>
-          <form onSubmit={handleTrack} className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">كود الطلب (7 أرقام)</label>
-              <input
-                type="text"
-                value={trackCode}
-                onChange={e => setTrackCode(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                className="w-full bg-[#1a1a2e] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all text-center text-xl tracking-[0.5em] font-mono"
-                placeholder="0000000"
-                maxLength={7}
-                dir="ltr"
+        {/* نموذج تسجيل الدخول */}
+        <form onSubmit={handleLoginSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 font-bold block mb-1.5 mr-1">اسم المستخدم</label>
+            <div className="relative">
+              <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input 
+                type="text" 
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="admin" 
+                className="w-full bg-[#090912] border border-gray-800/80 rounded-xl py-3 pr-11 pl-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 transition-all text-right"
+                required
               />
             </div>
-            {trackError && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm text-center">
-                {trackError}
-              </div>
-            )}
-            
-            {/* عرض نتائج التتبع بالتفصيل الكامل والعملة المصرية */}
-            {trackResult && (
-              <div className="bg-[#1a1a2e] border border-gray-700 rounded-xl p-5 space-y-3.5 text-right">
-                <h3 className="text-amber-500 font-bold text-center border-b border-gray-800 pb-2 text-base">تفاصيل أوردر الأتيليه</h3>
-                
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-400 flex items-center gap-1.5"><User className="w-4 h-4 text-gray-500" /> اسم العميل</span>
-                  <span className="text-white font-medium">{trackResult.customer_name}</span>
-                </div>
-                
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-400 flex items-center gap-1.5"><Scissors className="w-4 h-4 text-gray-500" /> حالة الطلب</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs border ${statusColors[trackResult.status] || ''}`}>
-                    {statusLabels[trackResult.status] || trackResult.status}
-                  </span>
-                </div>
+          </div>
 
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-400 flex items-center gap-1.5"><DollarSign className="w-4 h-4 text-gray-500" /> المبلغ المراد سداده</span>
-                  {/* تحويل العملة لـ ج.م */}
-                  <span className="text-amber-500 font-bold">{trackResult.price ? Number(trackResult.price).toLocaleString() : 0} ج.م</span>
-                </div>
+          <div>
+            <label className="text-xs text-gray-400 font-bold block mb-1.5 mr-1">كلمة المرور</label>
+            <div className="relative">
+              <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••" 
+                className="w-full bg-[#090912] border border-gray-800/80 rounded-xl py-3 pr-11 pl-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 transition-all text-right"
+                required
+              />
+            </div>
+          </div>
 
-                {trackResult.delivery_date && (
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-400 flex items-center gap-1.5"><Calendar className="w-4 h-4 text-gray-500" /> تاريخ الاستلام المتوقع</span>
-                    <span className="text-white font-mono flex items-center gap-1">
-                      {trackResult.delivery_date}
-                      {trackResult.delivery_time && <span className="text-gray-500 flex items-center"><Clock className="w-3.5 h-3.5 mr-1" />{trackResult.delivery_time}</span>}
-                    </span>
-                  </div>
-                )}
+          {error && (
+            <div className="bg-rose-950/30 border border-rose-900/50 rounded-xl p-3 text-center text-xs font-bold text-rose-400 animate-shake">
+              {error}
+            </div>
+          )}
 
-                {trackResult.notes && (
-                  <div className="pt-2 border-t border-gray-800 text-sm">
-                    <span className="text-gray-400 flex items-center gap-1.5 mb-1"><FileText className="w-4 h-4 text-gray-500" /> ملاحظات أو مقاسات:</span>
-                    <p className="text-gray-300 bg-black/30 p-2.5 rounded-lg text-xs leading-relaxed">{trackResult.notes}</p>
-                  </div>
-                )}
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-gray-800 disabled:to-gray-900 text-[#020206] font-black text-sm py-3.5 rounded-xl transition-all shadow-lg shadow-amber-500/5 flex items-center justify-center gap-2"
+          >
+            {loading ? 'جاري التحقق...' : 'دخول'}
+          </button>
+        </form>
 
-                {/* عرض صورة الموديل أو الفستان للزبون */}
-                {trackResult.image_url && (
-                  <div className="pt-2 border-t border-gray-800">
-                    <span className="text-gray-400 text-xs block mb-1.5 text-center">صورة التصميم المعتمد</span>
-                    <div className="rounded-xl overflow-hidden border border-gray-800 h-44 bg-black/50 flex items-center justify-center">
-                      <img src={trackResult.image_url} alt="تصميم الموديل" className="w-full h-full object-contain" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={trackLoading}
-              className="w-full bg-[#1a1a2e] border border-amber-500/30 hover:border-amber-500/50 text-amber-500 font-semibold py-3 rounded-xl transition-all duration-200 disabled:opacity-50"
-            >
-              {trackLoading ? 'جاري البحث...' : 'بحث'}
-            </button>
-          </form>
+        {/* زر تفعيل ميزة نسيت كلمة المرور */}
+        <div className="text-center mt-5">
+          <button 
+            onClick={() => { setShowResetModal(true); setResetError(''); setResetMessage(''); }}
+            className="text-xs font-bold text-amber-500 hover:text-amber-400 transition-colors underline decoration-dotted"
+          >
+            نسيت كلمة المرور؟ استعادة عبر الموبايل
+          </button>
         </div>
       </div>
+
+      {/* النافذة المنبثقة الجبارة لاستعادة الحساب عبر الـ OTP */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-[#05050b] border border-gray-800 rounded-3xl p-6 shadow-2xl relative">
+            
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-900 pb-3">
+              <KeyRound className="w-5 h-5 text-amber-500" />
+              <h3 className="text-sm font-black text-white">منظومة استعادة كلمة المرور الفورية</h3>
+            </div>
+
+            {resetError && <div className="mb-4 bg-rose-950/40 border border-rose-900/50 rounded-xl p-3 text-xs font-bold text-rose-400 text-center">{resetError}</div>}
+            {resetMessage && <div className="mb-4 bg-emerald-950/40 border border-emerald-900/50 rounded-xl p-3 text-xs font-bold text-emerald-400 text-center">{resetMessage}</div>}
+
+            {/* الخطوة الأولى: إدخال الهاتف */}
+            {resetStep === 'PHONE_INPUT' && (
+              <form onSubmit={handleSendOtp} className="space-y-4">
+                <p className="text-xs text-gray-400 leading-relaxed">أدخل رقم الموبايل المسجل لصاحب الأتيليه، وهنبعتلك كود تأكيد حقيقي (SMS) مكون من 6 أرقام فوراً.</p>
+                <div className="relative">
+                  <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                    type="tel"
+                    placeholder="0123456789"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 transition-all text-left font-mono"
+                    required
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={resetLoading}
+                  className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-800 text-black font-black text-xs py-3 rounded-xl transition-all flex items-center justify-center gap-1"
+                >
+                  {resetLoading ? 'جاري إرسال الرسالة...' : 'إرسال كود الـ 6 أرقام الحقيقي'}
+                  <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                </button>
+              </form>
+            )}
+
+            {/* الخطوة الثانية: إدخال الكود المستلم */}
+            {resetStep === 'OTP_INPUT' && (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <p className="text-xs text-gray-400">اكتب كود الـ 6 أرقام اللي وصلك في رسالة نصية على تليفونك حالاً:</p>
+                <div className="relative">
+                  <ShieldCheck className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                    type="text"
+                    maxLength={6}
+                    placeholder="123456"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-center tracking-[1em] text-sm text-amber-500 font-mono focus:outline-none focus:border-amber-500 transition-all"
+                    required
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={resetLoading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-800 text-white font-black text-xs py-3 rounded-xl transition-all"
+                >
+                  {resetLoading ? 'جاري التحقق...' : 'تأكيد الرمز وبدء التغيير'}
+                </button>
+              </form>
+            )}
+
+            {/* الخطوة الثالثة: تعيين الباسورد الجديد */}
+            {resetStep === 'NEW_PASSWORD_INPUT' && (
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                <p className="text-xs text-gray-400">اكتب كلمة المرور الجديدة والمؤمنة للأتيليه:</p>
+                <div className="relative">
+                  <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                    type="password"
+                    placeholder="اكتب الباسورد الجديد هنا"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 transition-all text-right"
+                    required
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={resetLoading}
+                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs py-3 rounded-xl transition-all"
+                >
+                  {resetLoading ? 'جاري الحفظ المباشر...' : 'حفظ وتفعيل كلمة المرور الجديدة'}
+                </button>
+              </form>
+            )}
+
+            {/* زر الإغلاق والتراجع */}
+            <button 
+              onClick={() => setShowResetModal(false)}
+              className="w-full mt-4 text-[11px] font-bold text-gray-600 hover:text-gray-400 transition-colors text-center block pt-2 border-t border-gray-900"
+            >
+              إلغاء والعودة لصفحة الدخول
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
