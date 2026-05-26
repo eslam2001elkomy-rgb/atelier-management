@@ -1,3 +1,4 @@
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
+// هذا الملف يجعل المتصفح يتعامل مع موقعك كتطبيق
+self.addEventListener('fetch', (event) => {
+  // كود فارغ حالياً لكي لا يظهر خطأ للمتصفح
 });
