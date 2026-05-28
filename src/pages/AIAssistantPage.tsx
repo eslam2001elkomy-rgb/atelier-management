@@ -132,17 +132,20 @@ export default function AIAssistantPage() {
   const recognitionRef = useRef<any>(null);
   const stateRef = useRef<AssistantState>('IDLE');
   const draftRef = useRef<OrderDraft>(draftOrder);
+  const statsRef = useRef<Stats>(stats);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const isAutoListeningAllowed = useRef<boolean>(false);
 
   useEffect(() => { stateRef.current = globalState; }, [globalState]);
   useEffect(() => { draftRef.current = draftOrder; }, [draftOrder]);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [conversation, processing]);
 
   useEffect(() => {
     synthRef.current = window.speechSynthesis;
     loadData();
-    addToConversation('assistant', 'مرحباً بك في الأتيليه الذكي البث المباشر. كيف يمكنني مساعدتك اليوم؟ يمكنك الضغط والتحدث مباشرة.', 'text');
+    addToConversation('assistant', 'مرحباً بك في نظام الأتيليه الذكي والمطور. المايك الذكي مستعد الآن للاستماع التلقائي المتواصل، تفضل بالتحدث دون الحاجة لضغط المايك في كل مرة.', 'text');
     initSpeechRecognition();
     return () => { killSpeechEngine(); };
   }, []);
@@ -180,29 +183,41 @@ export default function AIAssistantPage() {
     });
   };
 
-  // Web Speech API Configuration
+  // Web Speech API Configuration (Continuous Integration)
   const initSpeechRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
     const rec = new SpeechRecognition();
-    rec.continuous = false;
+    rec.continuous = false; // نعتمد على الإغلاق والفتح اليدوي الذكي لتجنب تهنيج السيرفرات الصوتية بالهواتف
     rec.interimResults = false;
     rec.lang = 'ar-EG';
 
     rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      // ميزة التحدث المستمر: إعادة تشغيل المايك تلقائياً إذا كان مسموحاً له ولم يكن هناك صوت يعمل حالياً
+      setTimeout(() => {
+        if (isAutoListeningAllowed.current && !window.speechSynthesis.speaking && !processing) {
+          try { rec.start(); } catch(e) {}
+        }
+      }, 300);
+    };
+
     rec.onresult = (event: any) => {
       const text = event.results[0][0].transcript;
       analyzeUserIntent(text);
     };
+
     recognitionRef.current = rec;
   };
 
   const toggleListening = () => {
     if (listening) {
+      isAutoListeningAllowed.current = false;
       recognitionRef.current?.stop();
     } else {
+      isAutoListeningAllowed.current = true;
       if (synthRef.current?.speaking) synthRef.current.cancel();
       try {
         recognitionRef.current?.start();
@@ -210,8 +225,12 @@ export default function AIAssistantPage() {
     }
   };
 
-  const killListeningEngineOnly = () => { recognitionRef.current?.stop(); };
+  const killListeningEngineOnly = () => { 
+    recognitionRef.current?.stop(); 
+  };
+
   const killSpeechEngine = () => {
+    isAutoListeningAllowed.current = false;
     killListeningEngineOnly();
     synthRef.current?.cancel();
   };
@@ -230,8 +249,19 @@ export default function AIAssistantPage() {
     utterance.rate = 1.0;
 
     utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
+    utterance.onend = () => {
+      setSpeaking(false);
+      // عند انتهاء الذكاء الاصطناعي من الكلام، نفتح المايك تلقائياً دون تدخل منك
+      if (isAutoListeningAllowed.current) {
+        try { recognitionRef.current?.start(); } catch(e) {}
+      }
+    };
+    utterance.onerror = () => {
+      setSpeaking(false);
+      if (isAutoListeningAllowed.current) {
+        try { recognitionRef.current?.start(); } catch(e) {}
+      }
+    };
     synthRef.current.speak(utterance);
   };
 
@@ -264,7 +294,9 @@ export default function AIAssistantPage() {
     return total;
   };
 
-  // Intent Engine
+  // ============================================================================
+  // INTENT ENGINE (RE-BUILT AND WIDENED FOR SMART UNDERSTANDING)
+  // ============================================================================
   const analyzeUserIntent = async (rawInput: string) => {
     const input = rawInput.trim().toLowerCase();
     if (!input) return;
@@ -282,8 +314,8 @@ export default function AIAssistantPage() {
         return;
       }
 
-      // Add Flow Trigger
-      if (currentState === 'IDLE' && (input.includes('ضيف') || input.includes('تسجيل أوردر') || input.includes('أوردر جديد'))) {
+      // 1. تدفق طلب إضافة أوردر جديد
+      if (currentState === 'IDLE' && (input.includes('ضيف') || input.includes('تسجيل') || input.includes('أوردر جديد') || input.includes('اوردر جديد'))) {
         setGlobalState('ADDING_NAME');
         respond('حاضر، نبدأ بإضافة أوردر جديد. ما هو اسم العميل بالكامل؟');
         return;
@@ -292,7 +324,7 @@ export default function AIAssistantPage() {
       if (currentState === 'ADDING_NAME') {
         setDraftOrder(prev => ({ ...prev, customer_name: rawInput }));
         setGlobalState('ADDING_PHONE');
-        respond('مليون مرحب. ما هو رقم تليفون العميل؟');
+        respond('جميل جداً. ما هو رقم تليفون العميل؟');
         return;
       }
 
@@ -300,7 +332,7 @@ export default function AIAssistantPage() {
         const phone = extractPhone(rawInput);
         setDraftOrder(prev => ({ ...prev, phone }));
         setGlobalState('ADDING_CATEGORY');
-        respond('تمام. ما هو نوع الموديل؟ (فستان، بدلة، تعديل، تفصيل خاص)؟');
+        respond('تمام. ما هو نوع الموديل؟ فستان، بدلة، تعديل، ولا تفصيل خاص؟');
         return;
       }
 
@@ -308,7 +340,7 @@ export default function AIAssistantPage() {
         const cat = detectCategory(rawInput);
         setDraftOrder(prev => ({ ...prev, category: cat }));
         setGlobalState('ADDING_PRICE');
-        respond(`تم تحديد التصنيف: ${CATEGORY_LABELS[cat]}. ما هو السعر الإجمالي المتفق عليه؟`);
+        respond(`تم تحديد التصنيف كـ ${CATEGORY_LABELS[cat]}. ما هو السعر الإجمالي المتفق عليه؟`);
         return;
       }
 
@@ -316,7 +348,7 @@ export default function AIAssistantPage() {
         const price = parseArabicNumbers(rawInput);
         setDraftOrder(prev => ({ ...prev, price }));
         setGlobalState('ADDING_PAID');
-        respond(`السعر ${price} جنيه، ما هو مبلغ العربون المدفوع؟`);
+        respond(`السعر هو ${price} جنيه، ما هو مبلغ العربون المدفوع؟`);
         return;
       }
 
@@ -325,7 +357,7 @@ export default function AIAssistantPage() {
         const price = draftRef.current.price;
         setDraftOrder(prev => ({ ...prev, paid }));
         setGlobalState('ADDING_DATE');
-        respond(`العربون ${paid} جنيه والمتبقي ${price - paid} جنيه. متى تاريخ التسليم؟ (مثلاً: بكرة، أو بعد أسبوع)`);
+        respond(`العربون ${paid} جنيه والمتبقي ${price - paid} جنيه. متى ميعاد الاستلام؟`);
         return;
       }
 
@@ -337,7 +369,7 @@ export default function AIAssistantPage() {
         
         setDraftOrder(prev => ({ ...prev, delivery_date: dateStr }));
         setGlobalState('ADDING_NOTES');
-        respond(`تاريخ التسليم المتوقع هو ${dateStr}. هل هناك أي ملاحظات أو مقاسات خاصة ترغب في تسجيلها؟`);
+        respond(`تاريخ التسليم المتوقع هو ${dateStr}. هل ترغب في تسجيل أي ملاحظات أو مقاسات خاصة؟`);
         return;
       }
 
@@ -362,14 +394,14 @@ export default function AIAssistantPage() {
         if (error) throw error;
         await loadData();
         resetAllStates();
-        respond(`✨ ممتاز! تم حفظ الأوردر بنجاح برقم كود ${code}. ومسجل الآن في قائمة الأوردرات قيد الانتظار.`, 'success');
+        respond(`✨ تم حفظ الأوردر بنجاح يا فنان بكود ${code}، وهو الآن مسجل في القائمة.`, 'success');
         return;
       }
 
-      // Status update Trigger
-      if (currentState === 'IDLE' && (input.includes('حالة') || input.includes('تعديل أوردر'))) {
+      // 2. تحديث حالة أوردر موجود
+      if (currentState === 'IDLE' && (input.includes('حالة') || input.includes('تعديل أوردر') || input.includes('تغير وضع'))) {
         setGlobalState('UPDATING_STATUS');
-        respond('يرجى قول الأرقام الخاصة بكود الأوردر لتعديله؟');
+        respond('يرجى قول رقم كود الأوردر لتعديله فوراً؟');
         return;
       }
 
@@ -381,12 +413,12 @@ export default function AIAssistantPage() {
         }
         const findOrder = allOrders.find(o => o.order_code.includes(match[0]));
         if (!findOrder) {
-          respond('عذراً، لم أجد أوردر مسجل بهذا الرقم المذكور.');
+          respond('عذراً، لم أجد أوردر مسجل بهذا الرقم.');
           return;
         }
         setPendingOrder(findOrder);
         setGlobalState('DELETING_CONFIRM');
-        respond(`وجدت أوردر العميل ${findOrder.customer_name}. ما هي الحالة الجديدة؟ (قيد التنفيذ، جاهز، تم التسليم)؟`);
+        respond(`وجدت أوردر العميل ${findOrder.customer_name}. ما هي الحالة الجديدة؟ قيد التنفيذ، جاهز، أم تم التسليم؟`);
         return;
       }
 
@@ -400,20 +432,28 @@ export default function AIAssistantPage() {
         if (error) throw error;
         await loadData();
         resetAllStates();
-        respond(`تم بنجاح تحديث أوردر الكود إلى ${STATUS_LABELS[newStatus]}.`, 'success');
+        respond(`تم بنجاح تحديث حالة الأوردر إلى ${STATUS_LABELS[newStatus]}.`, 'success');
         return;
       }
 
-      // Financial Reports Trigger
-      if (input.includes('حساب') || input.includes('تقرير') || input.includes('الخزنة') || input.includes('فلوس')) {
-        respond(`التقرير المالي الفوري للأتيليه: إجمالي الحسابات المقيدة ${stats.totalCash} ج.م، تم تحصيل عربون بقيمة ${stats.totalPaid} ج.م، وباقي في الخارج مع العملاء ${stats.remainingCash} ج.م.`, 'stats');
+      // 3. الفهم الذكي للأسئلة العامة (كم أوردر عندي / إحصائيات الأتيليه)
+      if (input.includes('كم اوردر') || input.includes('كام اوردر') || input.includes('عدد الاوردرات') || input.includes('عدد الأوردرات') || input.includes('الطلبات اللي عندي')) {
+        const currentStats = statsRef.current;
+        respond(`لديك حالياً إجمالي ${currentStats.total} أوردر مسجل في الأتيليه. من بينهم ${currentStats.pending} قيد الانتظار، و ${currentStats.inProgress} قيد التنفيذ، و ${currentStats.ready} جاهزين تماماً للتسليم.`);
         return;
       }
 
-      respond('أنا معك ومستعد. قل لي: (ضيف أوردر)، (تحديث حالة)، أو اطلب (تقرير الخزنة) المالي المباشر.');
+      // 4. التقارير المالية والفلوس
+      if (input.includes('حساب') || input.includes('تقرير') || input.includes('الخزنة') || input.includes('فلوس') || input.includes('معايا كام')) {
+        const currentStats = statsRef.current;
+        respond(`التقرير المالي الفوري: إجمالي الاتفاقات ${currentStats.totalCash} جنيه، تم تحصيل كاش بقيمة ${currentStats.totalPaid} جنيه، ومتبقي بالخارج في ذمة العملاء ${currentStats.remainingCash} جنيه.`, 'stats');
+        return;
+      }
+
+      respond('أنا معك وسامعك جيداً. قولي: (ضيف أوردر)، (تحديث حالة)، أو اسألني مباشرة (عندي كام أوردر اليوم)؟');
     } catch (err) {
       resetAllStates();
-      respond('عذراً، حدث خطأ غير متوقع أثناء المعالجة السريعة. يرجى تكرار المحاولة ثانية.', 'error');
+      respond('عذراً يا فنان، حدث خطأ أثناء المعالجة السريعة. يرجى تكرار الجملة ثانية.', 'error');
     }
   };
 
@@ -436,14 +476,14 @@ export default function AIAssistantPage() {
       <header className="p-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/60 sticky top-0 z-50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className={`p-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-md ${listening || speaking ? 'animate-bounce' : ''}`}>
+            <div className={`p-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-md ${listening || speaking ? 'scale-105 transition-all' : ''}`}>
               <Bot className="w-5 h-5 text-white" />
             </div>
             {(listening || speaking) && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>}
           </div>
           <div>
             <h1 className="font-bold text-base tracking-wide bg-gradient-to-l from-white to-slate-300 bg-clip-text text-transparent">الأتيليه الذكي PRO</h1>
-            <p className="text-[10px] text-emerald-400 font-mono">وضع الاستعداد الصوتي الذكي فعال</p>
+            <p className="text-[10px] text-emerald-400 font-mono">وضع الاستماع التلقائي والمستمر فعال والآن يفهم أسئلتك الكلية</p>
           </div>
         </div>
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2">
@@ -462,8 +502,8 @@ export default function AIAssistantPage() {
             {/* Quick Helper Pill Actions */}
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
               <button onClick={() => analyzeUserIntent('ضيف اوردر جديد')} className="flex items-center gap-1 text-xs whitespace-nowrap bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-800"><Plus className="w-3.5 h-3.5 text-emerald-400" /> إضافة أوردر</button>
+              <button onClick={() => analyzeUserIntent('كم اوردر عندي')} className="flex items-center gap-1 text-xs whitespace-nowrap bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-800"><Package className="w-3.5 h-3.5 text-blue-400" /> عدد الأوردرات</button>
               <button onClick={() => analyzeUserIntent('تقرير الخزنة')} className="flex items-center gap-1 text-xs whitespace-nowrap bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-800"><Receipt className="w-3.5 h-3.5 text-indigo-400" /> الحسابات والمالية</button>
-              <button onClick={() => analyzeUserIntent('تحديث حالة أوردر')} className="flex items-center gap-1 text-xs whitespace-nowrap bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-800"><RefreshCw className="w-3.5 h-3.5 text-amber-400" /> تعديل حالة</button>
               <button onClick={resetAllStates} className="flex items-center gap-1 text-xs whitespace-nowrap bg-rose-950/40 border border-rose-900/30 px-3 py-1.5 rounded-full text-rose-300"><X className="w-3.5 h-3.5" /> إلغاء الأمر</button>
             </div>
 
@@ -481,7 +521,7 @@ export default function AIAssistantPage() {
                       : 'bg-slate-850 border-slate-700/50 text-slate-100 rounded-bl-none'
                   }`}>
                     <div className="flex items-center gap-2 mb-1 opacity-60 text-[10px]">
-                      <span>{msg.role === 'user' ? '👤 العميل والمالك' : '✨ الذكاء الاصطناعي'}</span>
+                      <span>{msg.role === 'user' ? '👤 المالك والعميل' : '✨ المساعد الذكي'}</span>
                     </div>
                     <p className="text-sm font-normal leading-relaxed whitespace-pre-line">{msg.text}</p>
                     <span className="text-[9px] block text-left mt-2 text-slate-500 font-mono">
@@ -496,7 +536,7 @@ export default function AIAssistantPage() {
                 <div className="flex justify-end animate-pulse">
                   <div className="bg-slate-900 border border-slate-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs text-slate-400 shadow-md">
                     <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                    <span>جاري معالجة أمرك الصوتي وتحديث السيرفر...</span>
+                    <span>جاري التفكير والمعالجة السريعة...</span>
                   </div>
                 </div>
               )}
@@ -618,12 +658,6 @@ export default function AIAssistantPage() {
                 <span className="text-lg font-black text-white font-mono">{stats.ready}</span>
               </div>
             </div>
-
-            {/* Status Informational Tip */}
-            <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl flex items-start gap-3 text-xs text-slate-400 leading-relaxed">
-              <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-              <p>يتم تحديث هذه الإحصائيات بصورة تلقائية وفورية بمجرد إعطاء المساعد الذكي أمراً صوتياً بتحديث الأوردرات أو عند إدخال عميل جديد.</p>
-            </div>
           </div>
         )}
       </main>
@@ -635,7 +669,7 @@ export default function AIAssistantPage() {
           {/* Live Dynamic Status Voice Subtext & Waveform Indicator */}
           <div className="flex-1">
             <span className="text-[11px] block font-medium text-slate-400">
-              {listening ? '🔴 ميكروفون الأتيليه مفتوح... استمع إليك' : speaking ? '🔊 جاري التحدث والرد الآن...' : 'المساعد الصوتي في وضع الاستعداد المباشر'}
+              {listening ? '🔴 وضع التحدث الحر فعال... تحدث مباشرة' : speaking ? '🔊 جاري الرد صوتياً الآن...' : 'المساعد الصوتي في وضع الاستعداد المستمر'}
             </span>
             
             {/* Visualizer Wave simulation */}
@@ -647,7 +681,7 @@ export default function AIAssistantPage() {
                 <div className="w-0.5 bg-emerald-400 h-2.5 animate-pulse" />
               </div>
             ) : (
-              <span className="text-[10px] text-slate-500 block font-mono">اضغط المايك الدائري للتحدث</span>
+              <span className="text-[10px] text-slate-500 block font-mono">المايك سيفتح تلقائياً بمجرد تشغيله أول مرة</span>
             )}
           </div>
 
