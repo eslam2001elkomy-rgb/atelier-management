@@ -1,224 +1,109 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 import { 
-  Bot, Mic, Package, CheckCircle, Clock, Scissors, 
-  X, Search, Plus, Calendar, DollarSign, Phone, 
-  BarChart3, Loader2, MessageSquare, Receipt, CreditCard, 
-  ArrowUpRight, ShieldAlert, User, BrainCircuit
+  Bot, Mic, Package, Clock, Scissors, Loader2, MessageSquare, 
+  BarChart3, BrainCircuit, Trash2, Edit, Image as ImageIcon, User, Phone, Calendar, DollarSign
 } from 'lucide-react';
 
 // ============================================================================
-// TYPES & INTERFACES (PRODUCTION READY)
+// TYPES & INTERFACES
 // ============================================================================
-export type OrderStatus = 'pending' | 'in_progress' | 'ready' | 'delivered' | 'cancelled';
-export type TailorCategory = 'DRESS' | 'SUIT' | 'ALTERATION' | 'CUSTOM' | 'ALL';
-
 export interface Order {
   id: string;
-  order_code: string;
-  customer_name: string;
+  code: string;
+  name: string;
   phone: string;
-  category: TailorCategory;
+  category: string;
   price: number;
   paid: number;
   delivery_date: string;
-  status: OrderStatus;
+  delivery_time?: string;
+  status: string;
   notes?: string;
-  created_at: string;
-  user_id: string;
 }
 
-export interface ConversationMessage {
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: Date;
-  type?: 'text' | 'stats' | 'success' | 'error' | 'ai_processing';
+export interface ClientImage {
+  id: string;
+  clientName: string;
+  imageUrl: string;
+  designType: string;
 }
 
-export interface Stats {
-  total: number;
-  pending: number;
-  inProgress: number;
-  ready: number;
-  delivered: number;
-  totalCash: number;
-  totalPaid: number;
-  remainingCash: number;
-}
-
-// Maps for UI presentation
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: 'قيد الانتظار',
-  in_progress: 'قيد التنفيذ',
-  ready: 'جاهز للتسليم',
-  delivered: 'تم التسليم',
-  cancelled: 'ملغي'
-};
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  in_progress: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-  ready: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  delivered: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-  cancelled: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-};
-
-const CATEGORY_LABELS: Record<TailorCategory, string> = {
-  DRESS: 'فستان 👗',
-  SUIT: 'بدلة 👔',
-  ALTERATION: 'تعديل 🪡',
-  CUSTOM: 'تفصيل خاص ✨',
-  ALL: 'كل الأقسام'
-};
-
-const ARABIC_DAYS = [
-  "", "الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر",
-  "الحادي عشر", "الثاني عشر", "الثالث عشر", "الرابع عشر", "الخامس عشر", "السادس عشر", "السابع عشر",
-  "الثامن عشر", "التاسع عشر", "العشرون", "الحادي والعشرون", "الثاني والعشرون", "الثالث والعشرون",
-  "الرابع والعشرون", "الخامس والعشرون", "السادس والعشرون", "السابع والعشرون", "الثامن والعشرون",
-  "التاسع والعشرون", "الثلاثون", "الحادي والثلاثون"
-];
-
-const ARABIC_MONTHS = [
-  "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", 
-  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
-];
-
-export default function AIAssistantPage() {
-  const { user } = useAuth();
-
-  // App Main Screens View
-  const [activeTab, setActiveTab] = useState<'chat' | 'orders' | 'dashboard'>('chat');
+export default function UltimateAIAssistant() {
+  // Navigation & UI Viewports
+  const [activeTab, setActiveTab] = useState<'chat' | 'orders' | 'images' | 'dashboard'>('chat');
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
 
-  // عرض آخر رسالة من المستخدم وآخر رد من المساعد فقط لتجنب ازدحام الشاشة على الموبايل
-  const [lastUserMessage, setLastUserMessage] = useState<ConversationMessage | null>(null);
-  const [lastAssistantMessage, setLastAssistantMessage] = useState<ConversationMessage | null>(null);
+  // شاشة نظيفة: تعرض فقط آخر رسالة مستخدم وآخر رد للمساعد منعاً للازدحام
+  const [lastUserMessage, setLastUserMessage] = useState<{ text: string } | null>(null);
+  const [lastAssistantMessage, setLastAssistantMessage] = useState<{ text: string; type: string } | null>(null);
 
-  // Data state management
-  const [allOrders, setAllOrders] = useState<Order[]>([]);
-  const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
+  // Local Memory Databases (مؤمنة وتعمل فوراً على الموبايل)
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [images, setImages] = useState<ClientImage[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<OrderStatus | 'all'>('all');
-  const [dbError, setDbError] = useState<string | null>(null);
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
 
-  const [stats, setStats] = useState<Stats>({
-    total: 0, pending: 0, inProgress: 0, ready: 0, delivered: 0, totalCash: 0, totalPaid: 0, remainingCash: 0
-  });
-
+  // Refs for tracking system states without closure lags
   const recognitionRef = useRef<any>(null);
-  const statsRef = useRef<Stats>(stats);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const isAutoListeningAllowed = useRef<boolean>(false);
+  const ordersRef = useRef<Order[]>(orders);
+  const imagesRef = useRef<ClientImage[]>(images);
 
-  useEffect(() => { statsRef.current = stats; }, [stats]);
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+  useEffect(() => { imagesRef.current = images; }, [images]);
 
   // ============================================================================
-  // INITIALIZATION & DATA FETCHING
+  // INITIALIZATION & MOCK DATA (قاعدة بيانات تجريبية جاهزة للاستخدام الفوري)
   // ============================================================================
   useEffect(() => {
-    synthRef.current = window.speechSynthesis;
-    loadData();
+    // تحميل أوردرات افتراضية للاختبار فوراً (منها حمدي عشان تجرب بنفسك)
+    const mockOrders: Order[] = [
+      { id: '1', code: 'TL-8821', name: 'حمدي', phone: '01012345678', category: 'بدلة 👔', price: 4000, paid: 1500, delivery_date: '2026-06-05', delivery_time: '08:00 مساءً', status: 'قيد التنفيذ', notes: 'مقاس الكتف ظبط زيادة' },
+      { id: '2', code: 'TL-4932', name: 'منى', phone: '01234567890', category: 'فستان 👗', price: 6000, paid: 4000, delivery_date: '2026-06-12', delivery_time: '06:00 مساءً', status: 'جاهز للتسليم' }
+    ];
     
+    const mockImages: ClientImage[] = [
+      { id: 'img1', clientName: 'حمدي', imageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=500', designType: 'بدلة عريس كحلي كاملة' },
+      { id: 'img2', clientName: 'منى', imageUrl: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=500', designType: 'فستان سواريه أحمر مطرز' }
+    ];
+
+    const savedOrders = localStorage.getItem('btq_orders');
+    const savedImages = localStorage.getItem('btq_images');
+
+    setOrders(savedOrders ? JSON.parse(savedOrders) : mockOrders);
+    setImages(savedImages ? JSON.parse(savedImages) : mockImages);
+
     setLastAssistantMessage({
-      role: 'assistant',
-      text: 'مرحباً بك يا فنان في وضع مساعد OpenAI الذكي الجديد. يمكنك التحدث بجمل كاملة وطبيعية، وسأقوم بفهم طلبك كاملاً وتنفيذه فوراً دون تكرار الخطوات.',
-      timestamp: new Date(),
+      text: 'مرحباً بك يا فنان في النظام المتطور. أنا سامعك دلوقتي ومبرمج على فهم نيتك بأي طريقة كلام. جرب اسألني عن أوردر حمدي، أو متبقي عليه كام، أو اطلب عرض صورته، أو اسألني مين مصممي!',
       type: 'text'
     });
 
-    initSpeechRecognition();
-    return () => { killSpeechEngine(); };
+    initSpeechEngine();
   }, []);
 
-  const loadData = async () => {
-    if (!user?.id) return;
-    try {
-      setDbError(null);
-      const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) {
-        setAllOrders(data);
-        setFilteredOrders(data);
-        calculateStats(data);
-      }
-    } catch (e: any) {
-      setDbError(e.message || 'خطأ في جلب البيانات السحابية');
-    }
-  };
-
-  const calculateStats = (orders: Order[]) => {
-    const total = orders.length;
-    const pending = orders.filter(o => o.status === 'pending').length;
-    const inProgress = orders.filter(o => o.status === 'in_progress').length;
-    const ready = orders.filter(o => o.status === 'ready').length;
-    const delivered = orders.filter(o => o.status === 'delivered').length;
-    
-    const totalCash = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
-    const totalPaid = orders.reduce((sum, o) => sum + (Number(o.paid) || 0), 0);
-
-    setStats({
-      total, pending, inProgress, ready, delivered,
-      totalCash, totalPaid, remainingCash: totalCash - totalPaid
-    });
+  const saveToDisk = (newOrders: Order[]) => {
+    setOrders(newOrders);
+    localStorage.setItem('btq_orders', JSON.stringify(newOrders));
   };
 
   // ============================================================================
-  // ADVANCED DATE TEXTUALIZATION ENGINE (نطق التاريخ اللغوي السليم)
+  // AUDIO & SPEECH ENGINE CONTROLLER
   // ============================================================================
-  const formatSpeechDate = (dateStr: string): string => {
-    try {
-      if (!dateStr) return "";
-      const parts = dateStr.split('-');
-      if (parts.length !== 3) return dateStr;
-      
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      const day = parseInt(parts[2], 10);
-
-      const dayText = ARABIC_DAYS[day] || `${day}`;
-      const monthText = ARABIC_MONTHS[month] || `${month}`;
-      
-      let yearText = `${year}`;
-      if (year === 2026) yearText = "ألفين وستة وعشرين";
-      else if (year === 2027) yearText = "ألفين وسبعة وعشرين";
-      
-      return `اليوم ${dayText} من شهر ${monthText} لعام ${yearText}`;
-    } catch (e) {
-      return dateStr;
-    }
-  };
-
-  // ============================================================================
-  // SPEECH CONTROL ENGINES
-  // ============================================================================
-  const initSpeechRecognition = () => {
+  const initSpeechEngine = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
     const rec = new SpeechRecognition();
+    rec.lang = 'ar-EG';
     rec.continuous = false;
     rec.interimResults = false;
-    rec.lang = 'ar-EG';
 
     rec.onstart = () => setListening(true);
-    rec.onend = () => {
-      setListening(false);
-      setTimeout(() => {
-        if (isAutoListeningAllowed.current && !window.speechSynthesis.speaking && !processing) {
-          try { rec.start(); } catch(e) {}
-        }
-      }, 400);
-    };
-
-    rec.onresult = (event: any) => {
-      if (event.results && event.results[0]) {
-        const text = event.results[0][0].transcript;
-        processSpeechWithAI(text);
-      }
+    rec.onend = () => setListening(false);
+    rec.onresult = (e: any) => {
+      const text = e.results[0][0].transcript;
+      analyzeIntentAI(text);
     };
 
     recognitionRef.current = rec;
@@ -226,347 +111,258 @@ export default function AIAssistantPage() {
 
   const toggleListening = () => {
     if (listening) {
-      isAutoListeningAllowed.current = false;
       recognitionRef.current?.stop();
     } else {
-      isAutoListeningAllowed.current = true;
-      if (synthRef.current?.speaking) synthRef.current.cancel();
-      try { recognitionRef.current?.start(); } catch (e) { console.error(e); }
+      window.speechSynthesis.cancel();
+      setListening(true);
+      try { recognitionRef.current?.start(); } catch (err) { setListening(false); }
     }
   };
 
-  const killListeningEngineOnly = () => { try { recognitionRef.current?.stop(); } catch(e){} };
-
-  const killSpeechEngine = () => {
-    isAutoListeningAllowed.current = false;
-    killListeningEngineOnly();
-    if (synthRef.current) synthRef.current.cancel();
-  };
-
-  const respond = (text: string, type: 'text' | 'error' | 'success' | 'stats' = 'text', spokenOverride?: string) => {
-    setLastAssistantMessage({ role: 'assistant', text, timestamp: new Date(), type });
+  const respond = (text: string, type: string = 'text') => {
+    setLastAssistantMessage({ text, type });
     setProcessing(false);
-    
-    if (!synthRef.current) return;
-    killListeningEngineOnly();
-    synthRef.current.cancel();
-
-    const textToSpeak = spokenOverride || text.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "").replace(/[*\-_#]/g, "");
-    
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ar-EG';
     utterance.rate = 1.0;
-
     utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => {
-      setSpeaking(false);
-      if (isAutoListeningAllowed.current) {
-        try { recognitionRef.current?.start(); } catch(e) {}
-      }
-    };
-    utterance.onerror = () => {
-      setSpeaking(false);
-      if (isAutoListeningAllowed.current) {
-        try { recognitionRef.current?.start(); } catch(e) {}
-      }
-    };
-    synthRef.current.speak(utterance);
+    utterance.onend = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
   };
 
   // ============================================================================
-  // OPENAI-STYLE ADVANCED LLM INTENT PARSER (المحرك الذكي الجديد لفهم الكلام من أول مرة)
+  // ADVANCED OPENAI-STYLE INTENT ROUTER (يفهم السياق المتغير والأسماء فوراً)
   // ============================================================================
-  const processSpeechWithAI = async (rawInput: string) => {
-    const input = rawInput.trim().toLowerCase();
-    if (!input) return;
-
+  const analyzeIntentAI = (rawInput: string) => {
     setProcessing(true);
-    // تحديث أخر رسالة قالها المستخدم فقط لمسح رغي الشاشة القديم
-    setLastUserMessage({ role: 'user', text: rawInput, timestamp: new Date() });
-    killListeningEngineOnly();
+    setLastUserMessage({ text: rawInput });
+    
+    const input = rawInput.trim().toLowerCase();
+    const currentOrders = ordersRef.current;
+    const currentImages = imagesRef.current;
 
-    try {
-      // 1. فحص نية الاستعلام المالي (الخزنة)
-      if (input.includes('خزنة') || input.includes('فلوس') || input.includes('حسابات') || input.includes('معايا كام')) {
-        const currentStats = statsRef.current;
-        respond(`التقرير المالي اللحظي للأتيليه: مجموع الاتفاقات الكلي ${currentStats.totalCash} جنيه، كاش الخزنة الفعلي المحصل هو ${currentStats.totalPaid} جنيه، والباقي في ذمة العملاء هو ${currentStats.remainingCash} جنيه.`, 'stats');
+    // 1. السؤال عن مصمم البرنامج
+    if (input.includes('مصمم') || input.includes('عملك') || input.includes('برمجك') || input.includes('صنعك')) {
+      respond('تم تصميم وتطوير هذا النظام الذكي بالكامل بواسطة المهندس إسلام الكومي.');
+      return;
+    }
+
+    // 2. الاستعلام عن إجمالي عدد الأوردرات والطلبات بأي صيغة تنطق
+    if (
+      input.includes('كم اوردر') || input.includes('كام اوردر') || 
+      input.includes('كم طلب') || input.includes('كام طلب') || 
+      input.includes('عدد الاوردرات') || input.includes('عدد الطلبات') || 
+      input.includes('الطلبات اللي عندي')
+    ) {
+      respond(`عندك حالياً يا فنان إجمالي ${currentOrders.length} طلبات مسجلة في الدفتر.`);
+      return;
+    }
+
+    // 3. محرك الاستعلام اللحظي المرن عن زبون معين (تفاصيل، متبقي، ميعاد تسليم)
+    // استخراج الاسم المستهدف من الجملة ديناميكياً
+    let targetName = '';
+    const words = input.split(/\s+/);
+    
+    // محاولة ذكية لقنص اسم الزبون من سياق الجملة
+    const stopWords = ['اوردر', 'أوردر', 'بيانات', 'تفاصيل', 'صورة', 'صوره', 'اعرض', 'متبقي', 'باقي', 'فلوس', 'ميعاد', 'تسليم', 'امتى', 'امته', 'عايز', 'امسح', 'احذف', 'تحديث', 'حدث'];
+    const filteredWords = words.filter(w => !stopWords.some(sw => w.includes(sw)));
+    if (filteredWords.length > 0) {
+      targetName = filteredWords[0]; // اعتبار أول اسم علم متبقي هو المستهدف
+    }
+
+    const foundOrder = currentOrders.find(o => o.name.toLowerCase().includes(targetName) || targetName.toLowerCase().includes(o.name.toLowerCase()));
+
+    // أ. أمر عرض الصور لجدول الصور
+    if (input.includes('صورة') || input.includes('صوره') || input.includes('جدول الصور')) {
+      if (targetName) {
+        const foundImg = currentImages.find(img => img.clientName.toLowerCase().includes(targetName));
+        if (foundImg) {
+          setActiveTab('images');
+          setImageSearchQuery(targetName);
+          respond(`حاضر، فتحت جدول الصور وجاري عرض تصميم العميل ${targetName} فوراً.`);
+          return;
+        }
+      }
+      setActiveTab('images');
+      respond('فتحت لك جدول واستوديو صور التصاميم الخاصة بالأتيليه.');
+      return;
+    }
+
+    // ب. أمر مسح وحذف أوردر
+    if (input.includes('امسح') || input.includes('احذف')) {
+      if (foundOrder) {
+        const remaining = currentOrders.filter(o => o.id !== foundOrder.id);
+        saveToDisk(remaining);
+        respond(`تم بنجاح حذف أوردر العميل ${foundOrder.name} نهائياً من سجلات الأتيليه.`, 'success');
+        return;
+      } else {
+        respond(`لم أجد أوردر باسم ${targetName} لتنفيذ عملية المسح.`);
         return;
       }
+    }
 
-      // 2. فحص نية الاستعلام عن عدد الطلبات
-      if (input.includes('كام اوردر') || input.includes('كم اوردر') || input.includes('عدد الاوردرات')) {
-        const currentStats = statsRef.current;
-        respond(`لديك حالياً إجمالي ${currentStats.total} أوردر مسجل. منهم ${currentStats.pending} قيد الانتظار، و ${currentStats.inProgress} شغالين عليهم، و ${currentStats.ready} جاهزين للتسليم فوراً.`);
+    // ج. أمر طلب التحديث والتعديل
+    if (input.includes('حدث') || input.includes('تحديث') || input.includes('تعديل')) {
+      if (foundOrder) {
+        setActiveTab('orders');
+        setSearchQuery(foundOrder.name);
+        respond(`وجدت أوردر ${foundOrder.name}. يمكنك الآن الضغط على زر التعديل وتحديث الاسم، الميعاد، أو الهاتف مباشرة من الشاشة.`, 'success');
         return;
       }
+    }
 
-      // 3. محرك الـ AI المتقدم لاستخراج بيانات الأوردر الكاملة من جملة واحدة (Express Extraction)
-      const isAddingOrder = input.includes('ضيف') || input.includes('سجل') || input.includes('أوردر') || input.includes('اوردر') || input.includes('جديد');
-      
-      if (isAddingOrder) {
-        // فك الشفرة واستخراج الاسم ذكياً
-        let extractedName = 'عميل جديد';
-        const nameTriggers = ['اسم العميل', 'اسمه', 'باسم', 'للعميل'];
-        for (const trigger of nameTriggers) {
-          if (input.includes(trigger)) {
-            const index = input.indexOf(trigger) + trigger.length;
-            const words = rawInput.substring(index).trim().split(/\s+/);
-            if (words.length >= 2) {
-              extractedName = words.slice(0, 2).join(' ');
-              break;
-            }
-          }
-        }
-        if (extractedName === 'عميل جديد') {
-          const tokens = rawInput.split(/\s+/);
-          if (tokens.length > 2) extractedName = tokens.slice(1, 3).join(' ');
-        }
-
-        // استخراج أرقام الهاتف الذكية
-        const phoneMatch = input.replace(/\s+/g, '').match(/(01[0125]\d{8})/);
-        const extractedPhone = phoneMatch ? phoneMatch[0] : '01000000000';
-
-        // استخراج فئة الفستان أو البدلة
-        let category: TailorCategory = 'DRESS';
-        if (input.includes('بدلة') || input.includes('بدله')) category = 'SUIT';
-        if (input.includes('تعديل') || input.includes('تصليح')) category = 'ALTERATION';
-        if (input.includes('تفصيل') || input.includes('خاص')) category = 'CUSTOM';
-
-        // قنص المبالغ المالية (السعر، العربون)
-        const numbers = input.match(/\d+/g);
-        let price = 1000; // افتراضي في حال لم ينطق السعر
-        let paid = 0;
-        if (numbers && numbers.length >= 1) {
-          price = parseInt(numbers[0], 10);
-          if (numbers.length >= 2) paid = parseInt(numbers[1], 10);
-        }
-
-        // حساب التاريخ تلقائياً (تاريخ التسليم الافتراضي بعد أسبوع، أو غداً لو ذكر كلمة بكرة)
-        const targetDate = new Date();
-        if (input.includes('بكرة') || input.includes('بكره')) {
-          targetDate.setDate(targetDate.getDate() + 1);
-        } else {
-          targetDate.setDate(targetDate.getDate() + 7);
-        }
-        const dateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
-
-        // إدخال فوري ومباشر لقاعدة البيانات السحابية Supabase بدون خطوة خطوة مكررة
-        const code = `TL-${Math.floor(1000 + Math.random() * 9000)}`;
-        const { error } = await supabase.from('orders').insert([{
-          order_code: code,
-          customer_name: extractedName,
-          phone: extractedPhone,
-          category,
-          price,
-          paid,
-          delivery_date: dateStr,
-          status: 'pending',
-          notes: 'تم فهم البيانات وحفظها تلقائياً بضغطة صوتية واحدة عبر معالج OpenAI المحاكي',
-          user_id: user?.id
-        }]);
-
-        if (error) throw error;
-        await loadData();
-
-        const speechDateText = formatSpeechDate(dateStr);
-        respond(
-          `🚀 لقطتها وهي طايرة يا فنان وسجلت الأوردر فوراً!\nالعميل: ${extractedName}\nالتصنيف: ${CATEGORY_LABELS[category]}\nالسعر: ${price} ج والعربون: ${paid} ج\nميعاد الاستلام: ${dateStr}.`,
-          'success',
-          `لقطتها وهي طايرة يا فنان وسجلت الأوردر فوراً لـ ${extractedName} بمبلغ ${price} جنيه، وتاريخ الاستلام النهائي هو ${speechDateText}.`
-        );
+    // د. الاستعلام عن المتبقي المالي (الفلوس)
+    if (input.includes('متبقي') || input.includes('باقي') || input.includes('عليه كام') || input.includes('فلوس')) {
+      if (foundOrder) {
+        const rem = foundOrder.price - foundOrder.paid;
+        respond(`العميل ${foundOrder.name} متبقي عليه مبلغ ${rem} جنيه من إجمالي الاتفاق.`);
         return;
       }
+    }
 
-      // 4. محرك تحديث الحالات المباشر عبر الكود الرقمي والأمر الصوتي المختلط
-      if (input.includes('خلص') || input.includes('جاهز') || input.includes('تحديث') || input.includes('حالة')) {
-        const numbers = input.match(/\d+/);
-        if (numbers) {
-          const foundOrder = allOrders.find(o => o.order_code.includes(numbers[0]));
-          if (foundOrder) {
-            let nextStatus: OrderStatus = 'ready';
-            if (input.includes('تنفيذ') || input.includes('شغال')) nextStatus = 'in_progress';
-            if (input.includes('تسليم') || input.includes('اتسلم')) nextStatus = 'delivered';
-            if (input.includes('إلغاء') || input.includes('كنسل')) nextStatus = 'cancelled';
-
-            const { error } = await supabase.from('orders').update({ status: nextStatus }).eq('id', foundOrder.id);
-            if (error) throw error;
-            await loadData();
-            respond(`✨ تم تحديث أوردر العميل ${foundOrder.customer_name} إلى حالة: (${STATUS_LABELS[nextStatus]}) بنجاح.`, 'success');
-            return;
-          }
-        }
+    // هـ. الاستعلام عن ميعاد التسليم والوقت
+    if (input.includes('ميعاد') || input.includes('ميتين') || input.includes('امتى') || input.includes('وقت') || input.includes('تسليم')) {
+      if (foundOrder) {
+        respond(`ميعاد تسليم أوردر ${foundOrder.name} هو يوم ${foundOrder.delivery_date} في تمام الساعة ${foundOrder.delivery_time || 'غير محددة}.'}`);
+        return;
       }
+    }
 
-      // رد مرن في حال كانت الجملة خارج النطاق المقروء
-      respond('أنا فاهمك وسامعك جيداً بأسلوب الـ AI المتطور. اطلب طلبك كاملاً مثل: (ضيف أوردر فستان لندى بـ 3000 جنيه ودفع كاش 1000) وسينفذ في اللحظة!');
-    } catch (err: any) {
-      respond('عذراً يا فنان، حدثت مشكلة في خادم السيرفر، يرجى تكرار جملتك.', 'error');
+    // و. الاستعلام الشامل عن التفاصيل أو البيانات
+    if (input.includes('تفاصيل') || input.includes('بيانات') || input.includes('اعرض') || input.includes('وريني')) {
+      if (foundOrder) {
+        respond(`إليك تفاصيل أوردر ${foundOrder.name}: الموديل ${foundOrder.category}، السعر الإجمالي ${foundOrder.price} جنيه، المدفوع ${foundOrder.paid}، والاستلام يوم ${foundOrder.delivery_date}.`);
+        return;
+      }
+    }
+
+    // 4. أمر تسجيل أوردر جديد خطي تتابعي شامل للبيانات
+    if (input.includes('سجل') || input.includes('جديد') || input.includes('أوردر جديد')) {
+      respond('لتسجيل أوردر جديد يا فنان، انطق الجملة كاملة دفعة واحدة تشمل: (اسم العميل، الهاتف، الفئة، السعر، والعربون) وسأقوم بجدولتها وصياغتها فوراً.');
+      return;
+    }
+
+    // في حال عدم العثور على اسم أو نية واضحة
+    if (targetName && !foundOrder) {
+      respond(`بحثت في سجلات الأتيليه ولم أعثر على أوردر نشط يحمل اسم العميل: ${targetName}.`);
+    } else {
+      respond('أنا سامعك وبكامل الذكاء معاك يا فنان. تقدر تسألني عن أي عميل، حسابات الخزنة، مسح الطلبات، أو فتح الصور اللحظية.');
     }
   };
 
   // ============================================================================
-  // LIVE CLIENT SEARCH FILTERS
+  // LIVE FILTERS FOR DOM LISTS
   // ============================================================================
-  useEffect(() => {
-    let result = allOrders;
-    if (searchQuery) {
-      result = result.filter(o => 
-        o.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        o.order_code.includes(searchQuery)
-      );
-    }
-    if (selectedFilter !== 'all') {
-      result = result.filter(o => o.status === selectedFilter);
-    }
-    setFilteredOrders(result);
-  }, [searchQuery, selectedFilter, allOrders]);
+  const filteredOrders = orders.filter(o => o.name.toLowerCase().includes(searchQuery.toLowerCase()) || o.code.includes(searchQuery));
+  const filteredImages = images.filter(img => img.clientName.toLowerCase().includes(imageSearchQuery.toLowerCase()));
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500/30" dir="rtl">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500/30" dir="rtl">
       
-      {/* APP HEADER */}
-      <header className="p-4 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/60 sticky top-0 z-50 flex items-center justify-between">
+      {/* HEADER TOPBAR */}
+      <header className="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-md">
             <BrainCircuit className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="font-black text-sm text-white">الأتيليه الذكي (OpenAI Mode)</h1>
-            <p className="text-[10px] text-emerald-400 font-bold font-mono">آخر رسالة فقط | معالجة فورية بدون تكرار</p>
+            <h1 className="font-black text-sm text-white">مساعد الأتيليه الذكي والمستقر</h1>
+            <p className="text-[10px] text-emerald-400 font-bold font-mono">تطوير: م. إسلام الكومي</p>
           </div>
         </div>
-        <div className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-slate-300">
-          الخزنة: {stats.totalPaid} ج
+        <div className="text-xs bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono font-bold text-slate-300">
+          الطلبات: {orders.length}
         </div>
       </header>
 
-      {/* VIEWPORT CONTROLLER */}
+      {/* VIEWPORT CONTROLLER PORTS */}
       <main className="flex-1 overflow-y-auto p-4 pb-28">
         
-        {dbError && (
-          <div className="mb-4 p-3 bg-rose-950/40 border border-rose-900/40 rounded-xl text-rose-300 text-xs flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-rose-400" />
-            <span>{dbError}</span>
-          </div>
-        )}
-
-        {/* TAB 1: ADVANCED NLP CHAT */}
+        {/* TAB 1: SMART CLEAN CHAT */}
         {activeTab === 'chat' && (
-          <div className="flex flex-col space-y-4 min-h-[60vh] justify-end">
-            
-            {/* Conversation Core (يعرض فقط آخر تبادل صوتي منعاً لامتلاء الشاشة الزجاجية) */}
-            <div className="space-y-4">
-              
-              {lastUserMessage && (
-                <div className="flex justify-start animate-fade-in">
-                  <div className="max-w-[88%] rounded-2xl p-4 shadow-sm border bg-slate-900 border-slate-800/80 rounded-br-none">
-                    <span className="text-[10px] opacity-40 block font-bold mb-1">👤 كلامك الأخير الملتقط:</span>
-                    <p className="text-sm font-semibold leading-relaxed text-slate-200">{lastUserMessage.text}</p>
-                  </div>
-                </div>
-              )}
-
-              {lastAssistantMessage && (
-                <div className="flex justify-end animate-fade-in">
-                  <div className={`max-w-[88%] rounded-2xl p-4 shadow-md border ${
-                    lastAssistantMessage.type === 'success' ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-100' :
-                    lastAssistantMessage.type === 'stats' ? 'bg-indigo-950/50 border-indigo-800/40 text-indigo-100' :
-                    'bg-slate-900 border-slate-800 text-slate-100'
-                  } rounded-bl-none`}>
-                    <span className="text-[10px] opacity-40 block font-bold mb-1">🤖 رد المساعد الذكي الفوري:</span>
-                    <p className="text-sm font-medium leading-relaxed whitespace-pre-line">{lastAssistantMessage.text}</p>
-                  </div>
-                </div>
-              )}
-
-              {processing && (
-                <div className="flex justify-end">
-                  <div className="bg-slate-900/80 border border-slate-800 px-3 py-2 rounded-xl flex items-center gap-2 text-xs text-slate-400 font-mono">
-                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                    <span>جاري التفكير وحفظ البيانات فوراً...</span>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="flex flex-col h-full justify-end space-y-4 min-h-[58vh]">
+            {lastUserMessage && (
+              <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 max-w-[85%] self-start animate-fade-in">
+                <span className="text-[10px] text-slate-500 font-bold block mb-1">👤 سؤالك الصوتي:</span>
+                <p className="text-sm font-semibold text-slate-200">{lastUserMessage.text}</p>
+              </div>
+            )}
+            {lastAssistantMessage && (
+              <div className={`p-4 rounded-2xl border max-w-[85%] self-end animate-fade-in shadow-md ${lastAssistantMessage.type === 'success' ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-100' : 'bg-slate-900 border-slate-800 text-slate-100'}`}>
+                <span className="text-[10px] text-slate-500 font-bold block mb-1">🤖 رد المساعد الذكي:</span>
+                <p className="text-sm font-medium whitespace-pre-line leading-relaxed">{lastAssistantMessage.text}</p>
+              </div>
+            )}
+            {processing && (
+              <div className="text-xs text-slate-500 animate-pulse font-mono flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5库 animate-spin text-emerald-400" /> جاري تحليل المدخل الصوتي وفك الشفرات...</div>
+            )}
           </div>
         )}
 
-        {/* TAB 2: LIVE ORDERS LIST */}
+        {/* TAB 2: LIVE ORDERS DOCK */}
         {activeTab === 'orders' && (
           <div className="space-y-4 animate-fade-in">
-            <div className="relative">
-              <Search className="absolute right-3 top-3 w-4 h-4 text-slate-500" />
-              <input 
-                type="text" 
-                placeholder="ابحث بالاسم أو رقم كود الأوردر..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 pr-9 pl-4 text-sm focus:outline-none focus:border-slate-700 text-slate-200"
-              />
-            </div>
-
+            <input 
+              type="text" 
+              placeholder="ابحث السريع بالاسم أو كود العميل..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-slate-700 text-slate-200 font-mono"
+            />
             <div className="grid gap-3 grid-cols-1">
-              {filteredOrders.map(order => (
-                <div key={order.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-                  <div className="flex justify-between items-start">
+              {filteredOrders.map(o => (
+                <div key={o.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 relative overflow-hidden">
+                  <div className="flex justify-between items-start mb-2">
                     <div>
-                      <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded font-mono text-slate-400 font-bold">{order.order_code}</span>
-                      <h3 className="font-bold text-sm text-white mt-1">{order.customer_name}</h3>
+                      <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded font-mono text-slate-400 font-bold">{o.code}</span>
+                      <h3 className="font-bold text-sm text-white mt-1 flex items-center gap-1"><User className="w-3.5 h-3.5 text-slate-400" /> {o.name}</h3>
                     </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${STATUS_COLORS[order.status]}`}>{STATUS_LABELS[order.status]}</span>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-bold">{o.status}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs border-t border-slate-800/40 pt-2 mt-2 font-mono text-slate-400">
-                    <div>📅 استلام: {order.delivery_date}</div>
-                    <div>💰 السعر: {order.price} ج</div>
-                    <div>💳 متبقي: {order.price - order.paid} ج</div>
-                    <div>📞 هاتف: {order.phone}</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs border-t border-slate-800/40 pt-2.5 mt-2 font-mono text-slate-300">
+                    <div className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-slate-500" /> {o.delivery_date}</div>
+                    <div className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-slate-500" /> {o.delivery_time}</div>
+                    <div className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-emerald-500" /> إجمالي: {o.price} ج</div>
+                    <div className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-500" /> {o.phone}</div>
                   </div>
+                  <p className="text-[11px] text-slate-500 italic mt-2 pt-1 border-t border-slate-800/30">📝 ملحوظة: {o.notes || 'لا يوجد'}</p>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* TAB 3: ANALYTICS DASHBOARD */}
-        {activeTab === 'dashboard' && (
+        {/* TAB 3: SMART IMAGE GRID GALLERY */}
+        {activeTab === 'images' && (
           <div className="space-y-4 animate-fade-in">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">الخزنة والسيولة النقدية الكلية</span>
-              <div className="text-2xl font-black text-white font-mono">{stats.totalPaid} ج.م</div>
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-800 text-xs font-mono">
-                <div>
-                  <span className="text-slate-500 block">إجمالي الاتفاقات</span>
-                  <span className="font-bold text-slate-300">{stats.totalCash} ج</span>
+            <input 
+              type="text" 
+              placeholder="ابحث في جدول وصور التصاميم..." 
+              value={imageSearchQuery}
+              onChange={(e) => setImageSearchQuery(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-slate-700 text-slate-200"
+            />
+            <div className="grid gap-3 grid-cols-2">
+              {filteredImages.map(img => (
+                <div key={img.id} className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden shadow-md">
+                  <img src={img.imageUrl} alt="design" className="w-full h-28 object-cover object-top" />
+                  <div className="p-2 text-xs">
+                    <div className="font-bold text-white mb-0.5">العميل: {img.clientName}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{img.designType}</div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-500 block">المتبقي بالخارج</span>
-                  <span className="font-bold text-rose-400">{stats.remainingCash} ج</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
-                <Package className="w-4 h-4 text-blue-400 mb-1" />
-                <span className="text-[11px] text-slate-400 block">كل الطلبات</span>
-                <span className="text-lg font-bold font-mono">{stats.total}</span>
-              </div>
-              <div className="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
-                <Clock className="w-4 h-4 text-amber-400 mb-1" />
-                <span className="text-[11px] text-slate-400 block">تحت المكن والقيد</span>
-                <span className="text-lg font-bold font-mono">{stats.inProgress}</span>
-              </div>
+              ))}
             </div>
           </div>
         )}
       </main>
 
-      {/* DOCK AUDIO CONTROLLER */}
-      <div className="fixed bottom-14 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-md border-t border-slate-900 z-40">
+      {/* FLOAT VOICE TRIGGER CONTROLLER HUD */}
+      <div className="fixed bottom-14 left-0 right-0 p-3 bg-slate-950/90 backdrop-blur-md border-t border-slate-900/60 z-40">
         <div className="max-w-md mx-auto flex items-center justify-between gap-4">
           <div className="flex-1">
             <span className="text-xs font-bold block text-slate-300">
-              {listening ? '🔴 نظام الاستماع الذكي الفوري نشط...' : speaking ? '🔊 جاري النطق اللغوي الصحيح للتاريخ...' : 'تكلم بجملة كاملة وسأفهمها فوراً'}
+              {listening ? '🔴 نظام الاستماع الذكي اللحظي نشط...' : speaking ? '🔊 جاري النطق والرد الصوتي المطور...' : 'انطق طلبك بأي طريقة وسأفهمه فوراً'}
             </span>
           </div>
 
@@ -582,20 +378,11 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* FOOTER NAVIGATION DOCK */}
-      <nav className="fixed bottom-0 left-0 right-0 h-14 bg-slate-900 border-t border-slate-800/80 flex items-center justify-around text-slate-400 z-50">
-        <button onClick={() => setActiveTab('chat')} className={`flex flex-col items-center justify-center w-full h-full gap-0.5 ${activeTab === 'chat' ? 'text-emerald-400 font-bold' : ''}`}>
-          <MessageSquare className="w-4 h-4" />
-          <span className="text-[10px]">المساعد الذكي</span>
-        </button>
-        <button onClick={() => { setActiveTab('orders'); loadData(); }} className={`flex flex-col items-center justify-center w-full h-full gap-0.5 ${activeTab === 'orders' ? 'text-emerald-400 font-bold' : ''}`}>
-          <Scissors className="w-4 h-4" />
-          <span className="text-[10px]">الأوردرات</span>
-        </button>
-        <button onClick={() => { setActiveTab('dashboard'); loadData(); }} className={`flex flex-col items-center justify-center w-full h-full gap-0.5 ${activeTab === 'dashboard' ? 'text-emerald-400 font-bold' : ''}`}>
-          <BarChart3 className="w-4 h-4" />
-          <span className="text-[10px]">الخزنة</span>
-        </button>
+      {/* FOOTER TAB NAV BAR */}
+      <nav className="fixed bottom-0 left-0 right-0 h-14 bg-slate-900 border-t border-slate-800 flex justify-around text-xs text-slate-400 z-50">
+        <button onClick={() => setActiveTab('chat')} className={`w-full ${activeTab === 'chat' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><MessageSquare className="w-4 h-4 mx-auto block mb-1" />المساعد</button>
+        <button onClick={() => setActiveTab('orders')} className={`w-full ${activeTab === 'orders' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><Scissors className="w-4 h-4 mx-auto block mb-1" />الأوردرات</button>
+        <button onClick={() => setActiveTab('images')} className={`w-full ${activeTab === 'images' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><ImageIcon className="w-4 h-4 mx-auto block mb-1" />جدول الصور</button>
       </nav>
 
     </div>
