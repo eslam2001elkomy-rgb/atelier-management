@@ -1,359 +1,493 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-  BrainCircuit, Mic, MessageSquare, Scissors, BarChart3, 
-  User, Calendar, Clock, DollarSign, Phone, ImageIcon, Loader2 
-} from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  fetchOrders,
+  createOrder,
+  updateOrder,
+  deleteOrder,
+  generateOrderCode,
+  fetchOrderStats,
+  saveConversation,
+  fetchConversations,
+} from '../lib/database';
+import { Bot, Mic, MicOff, Send, Trash2, Volume2 } from 'lucide-react';
 
-// تراكيب البيانات الثابتة
-export interface Order {
-  id: string;
-  code: string;
-  name: string;
-  phone: string;
-  category: string;
-  price: number;
-  paid: number;
-  delivery_date: string;
-  delivery_time?: string;
-  status: 'قيد الانتظار' | 'شغالين عليهم' | 'جاهزين للتسليم';
-  notes?: string;
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
 }
 
-export interface ClientImage {
-  id: string;
-  clientName: string;
-  imageUrl: string;
-  designType: string;
-}
-
-export default function AtelierSmartAssistant() {
-  // تفعيل التبويب الافتراضي بناءً على تصميمك
-  const [activeTab, setActiveTab] = useState<'chat' | 'orders' | 'dashboard' | 'images'>('chat');
+export default function AIAssistantPage() {
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
-
-  // شاشة نظيفة تعرض فقط آخر جملة تم التقاطها وأحدث رد منعاً للتكرار والرغي
-  const [lastUserMessage, setLastUserMessage] = useState<{ text: string } | null>(null);
-  const [lastAssistantMessage, setLastAssistantMessage] = useState<{ text: string; type: string } | null>(null);
-
-  // قواعد البيانات المحلية المستقرة لتجنب مشاكل السيرفرات والأصفار
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [images, setImages] = useState<ClientImage[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-
+  const [orders, setOrders] = useState<any[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const ordersRef = useRef<Order[]>(orders);
-  const imagesRef = useRef<ClientImage[]>(images);
+  const listeningRef = useRef(false);
+  const ordersRef = useRef<any[]>([]);
 
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
-  useEffect(() => { imagesRef.current = images; }, [images]);
-
-  // ==========================================
-  // تحميل البيانات والتهيئة الأساسية
-  // ==========================================
   useEffect(() => {
-    // بيانات تجريبية فورية (عشان تلاقي حمدي ومنى جاهزين وميطلعش 0 أوردر)
-    const defaultOrders: Order[] = [
-      { id: '1', code: 'TL-102', name: 'حمدي', phone: '01012345678', category: 'بدلة', price: 5000, paid: 2000, delivery_date: '2026-06-01', delivery_time: '09:00 مساءً', status: 'شغالين عليهم', notes: 'تعديل وسع الجاكت' },
-      { id: '2', code: 'TL-105', name: 'منى', phone: '01234567890', category: 'فستان', price: 7000, paid: 4000, delivery_date: '2026-06-10', delivery_time: '07:00 مساءً', status: 'قيد الانتظار', notes: 'تطريز مكثف على الصدر' }
-    ];
+    ordersRef.current = orders;
+  }, [orders]);
 
-    const defaultImages: ClientImage[] = [
-      { id: 'img1', clientName: 'حمدي', imageUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=400', designType: 'تصميم بدلة حمدي الكاملة' },
-      { id: 'img2', clientName: 'منى', imageUrl: 'https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=400', designType: 'فستان سواريه منى' }
-    ];
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-    const localSavedOrders = localStorage.getItem('atl_orders_v2');
-    const localSavedImages = localStorage.getItem('atl_images_v2');
-
-    setOrders(localSavedOrders ? JSON.parse(localSavedOrders) : defaultOrders);
-    setImages(localSavedImages ? JSON.parse(localSavedImages) : defaultImages);
-
-    setLastAssistantMessage({
-      text: 'مرحباً بك يا فنان في نظام معالجة الأتيليه الفوري والمستقر محلياً (بدون تكرار أو أخطاء خادم). جربني الآن!',
-      type: 'text'
-    });
-
-    initSpeech();
+  useEffect(() => {
+    loadOrders();
+    loadHistory();
+    return () => {
+      stopListening();
+      window.speechSynthesis?.cancel();
+    };
   }, []);
 
-  const saveOrdersToLocal = (updatedList: Order[]) => {
-    setOrders(updatedList);
-    localStorage.setItem('atl_orders_v2', JSON.stringify(updatedList));
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // ==========================================
-  // محرك التقاط الصوت (Speech-to-Text)
-  // ==========================================
-  const initSpeech = () => {
+  const loadOrders = async () => {
+    try {
+      const data = await fetchOrders();
+      setOrders(data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadHistory = async () => {
+    if (!user) return;
+    try {
+      const data = await fetchConversations(user.id);
+      if (data && data.length > 0) {
+        const historyMsgs: Message[] = [];
+        data.slice(0, 10).reverse().forEach((c: any) => {
+          historyMsgs.push({ role: 'user', content: c.user_message, timestamp: new Date(c.created_at) });
+          historyMsgs.push({ role: 'assistant', content: c.assistant_response, timestamp: new Date(c.created_at) });
+        });
+        setMessages(historyMsgs);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const speak = (text: string) => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ar-SA';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    synth.speak(utterance);
+  };
+
+  const addMessage = (role: 'user' | 'assistant', content: string) => {
+    setMessages(prev => [...prev, { role, content, timestamp: new Date() }]);
+  };
+
+  const processCommand = async (text: string): Promise<string> => {
+    const lower = text.trim();
+    const currentOrders = ordersRef.current;
+
+    // Add order
+    if (lower.includes('أضف') && (lower.includes('طلب') || lower.includes('اوردر') || lower.includes('أوردر'))) {
+      const nameMatch = lower.match(/باسم\s+(.+?)(?:\s|$)/) || lower.match(/اسم\s+(.+?)(?:\s|$)/);
+      const name = nameMatch ? nameMatch[1].trim() : null;
+      if (name) {
+        const code = await generateOrderCode();
+        await createOrder({
+          order_code: code,
+          customer_name: name,
+          phone: '',
+          delivery_date: null,
+          delivery_time: null,
+          price: 0,
+          notes: '',
+          status: 'pending',
+        });
+        await loadOrders();
+        return `تم إنشاء طلب جديد باسم ${name} بكود ${code}`;
+      }
+      return 'يرجى تحديد اسم العميل، مثال: أضف طلب جديد باسم أحمد';
+    }
+
+    // Show images
+    if (lower.includes('صور') && (lower.includes('طلب') || lower.includes('اوردر'))) {
+      const nameMatch = lower.match(/(?:طلب|اوردر)\s+(.+?)(?:\s|$)/);
+      const name = nameMatch ? nameMatch[1].trim() : null;
+      if (name) {
+        const order = currentOrders.find((o: any) => o.customer_name.includes(name));
+        if (order) {
+          const imgCount = order.order_images?.length || 0;
+          return imgCount > 0
+            ? `يوجد ${imgCount} صورة لطلب ${order.customer_name}`
+            : `لا توجد صور لطلب ${order.customer_name}`;
+        }
+        return `لم أجد طلباً باسم ${name}`;
+      }
+    }
+
+    // Delivery tomorrow
+    if (lower.includes('هيتسلم') && (lower.includes('بكرة') || lower.includes('غداً') || lower.includes('بكرا'))) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const dueOrders = currentOrders.filter((o: any) => o.delivery_date === tomorrowStr);
+      if (dueOrders.length === 0) return 'لا توجد طلبات مستلمة غداً';
+      const names = dueOrders.map((o: any) => o.customer_name).join('، ');
+      return `يوجد ${dueOrders.length} طلب مستلم غداً: ${names}`;
+    }
+
+    // Change status
+    if (lower.includes('غير') && lower.includes('حالة')) {
+      const statusMap: Record<string, string> = {
+        'انتظار': 'pending',
+        'تنفيذ': 'in_progress',
+        'جاهز': 'ready',
+        'تسليم': 'delivered',
+      };
+      let newStatus = '';
+      for (const [key, val] of Object.entries(statusMap)) {
+        if (lower.includes(key)) { newStatus = val; break; }
+      }
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch && newStatus) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          await updateOrder(order.id, { status: newStatus });
+          await loadOrders();
+          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز', delivered: 'تم التسليم' };
+          return `تم تغيير حالة الطلب ${order.order_code} إلى ${statusLabels[newStatus]}`;
+        }
+        return `لم أجد الطلب رقم ${codeMatch[0]}`;
+      }
+      return 'يرجى تحديد رقم الطلب والحالة الجديدة';
+    }
+
+    // Delete order
+    if (lower.includes('احذف') && lower.includes('طلب')) {
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          await deleteOrder(order.id);
+          await loadOrders();
+          return `تم حذف الطلب ${order.order_code}`;
+        }
+        return `لم أجد الطلب رقم ${codeMatch[0]}`;
+      }
+      return 'يرجى تحديد رقم الطلب المكون من 7 أرقام';
+    }
+
+    // Statistics
+    if ((lower.includes('كم') && lower.includes('طلب')) || lower.includes('إحصائ') || lower.includes('احصائ') || lower.includes('عدد')) {
+      const stats = await fetchOrderStats();
+      return `إجمالي الطلبات: ${stats.total}، قيد الانتظار: ${stats.pending}، قيد التنفيذ: ${stats.in_progress}، جاهز: ${stats.ready}، تم التسليم: ${stats.delivered}`;
+    }
+
+    // Prices
+    if (lower.includes('سعر') || lower.includes('أسعار') || lower.includes('مبلغ') || lower.includes('إجمالي')) {
+      const total = currentOrders.reduce((s: number, o: any) => s + Number(o.price), 0);
+      const pending = currentOrders.filter((o: any) => o.status === 'pending').reduce((s: number, o: any) => s + Number(o.price), 0);
+      return `إجمالي المبالغ: ${total.toLocaleString()} ر.س، المبالغ المعلقة: ${pending.toLocaleString()} ر.س`;
+    }
+
+    // Current time
+    if (lower.includes('الساعة') || lower.includes('الوقت')) {
+      const now = new Date();
+      return `الساعة الآن ${now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    // Current date
+    if (lower.includes('التاريخ') || lower.includes('اليوم') || lower.includes('تاريخ')) {
+      const now = new Date();
+      return `اليوم ${now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+    }
+
+    // Search order
+    if (lower.includes('ابحث') || lower.includes('بحث') || (lower.includes('عرض') && lower.includes('طلب'))) {
+      const codeMatch = lower.match(/\d{7}/);
+      if (codeMatch) {
+        const order = currentOrders.find((o: any) => o.order_code === codeMatch[0]);
+        if (order) {
+          const statusLabels: Record<string, string> = { pending: 'قيد الانتظار', in_progress: 'قيد التنفيذ', ready: 'جاهز', delivered: 'تم التسليم' };
+          return `طلب ${order.customer_name}، الحالة: ${statusLabels[order.status] || order.status}، السعر: ${Number(order.price).toLocaleString()} ر.س`;
+        }
+        return `لم أجد الطلب رقم ${codeMatch[0]}`;
+      }
+      const nameMatch = lower.match(/(?:عن|لـ)\s+(.+?)(?:\s|$)/);
+      if (nameMatch) {
+        const found = currentOrders.filter((o: any) => o.customer_name.includes(nameMatch[1].trim()));
+        if (found.length > 0) {
+          const names = found.map((o: any) => `${o.customer_name} (${o.order_code})`).join('، ');
+          return `وجدت ${found.length} طلب: ${names}`;
+        }
+        return `لم أجد طلبات باسم ${nameMatch[1]}`;
+      }
+    }
+
+    return 'مرحباً! أنا مساعدك الذكي. يمكنني مساعدتك في إدارة الطلبات والبحث والإحصائيات. قل "أضف طلب جديد" أو "كم طلب" أو "الوقت الآن"';
+  };
+
+  const handleUserMessage = async (text: string) => {
+    addMessage('user', text);
+    setProcessing(true);
+
+    try {
+      const response = await processCommand(text);
+      addMessage('assistant', response);
+      speak(response);
+
+      if (user) {
+        await saveConversation({
+          user_id: user.id,
+          user_message: text,
+          assistant_response: response,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      addMessage('assistant', 'عذراً، حدث خطأ أثناء المعالجة');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput('');
+    handleUserMessage(text);
+  };
+
+  const stopListening = () => {
+    listeningRef.current = false;
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+    }
+    setListening(false);
+  };
+
+  const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+      addMessage('assistant', 'عذراً، متصفحك لا يدعم التعرف على الصوت. يمكنك الكتابة بدلاً من ذلك.');
+      return;
+    }
 
-    const rec = new SpeechRecognition();
-    rec.lang = 'ar-EG';
-    rec.continuous = false;
-    rec.interimResults = false;
+    stopListening();
 
-    rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onresult = (e: any) => {
-      const text = e.results[0][0].transcript;
-      processVoiceCommand(text);
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ar-SA';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event: any) => {
+      const last = event.results[event.results.length - 1];
+      if (last.isFinal) {
+        const transcript = last[0].transcript.trim();
+        if (transcript) {
+          handleUserMessage(transcript);
+        }
+      }
     };
 
-    recognitionRef.current = rec;
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        setListening(false);
+        listeningRef.current = false;
+      }
+    };
+
+    recognition.onend = () => {
+      if (listeningRef.current) {
+        try { recognition.start(); } catch {}
+      }
+    };
+
+    recognitionRef.current = recognition;
+    listeningRef.current = true;
+    recognition.start();
+    setListening(true);
   };
 
   const toggleListening = () => {
     if (listening) {
-      recognitionRef.current?.stop();
+      stopListening();
     } else {
-      window.speechSynthesis.cancel();
-      setListening(true);
-      try { recognitionRef.current?.start(); } catch (err) { setListening(false); }
+      startListening();
     }
   };
 
-  // ==========================================
-  // محرك فهم السياق والذكاء المرن (Intent Parser)
-  // ==========================================
-  const processVoiceCommand = (rawText: string) => {
-    setProcessing(true);
-    setLastUserMessage({ text: rawText });
-
-    const txt = rawText.trim().toLowerCase();
-    const currentOrders = ordersRef.current;
-    const currentImages = imagesRef.current;
-
-    // 1. سؤال المطور والمصمم
-    if (txt.includes('مصمم') || txt.includes('برمجك') || txt.includes('عملك') || txt.includes('مين الي عملك')) {
-      speakResponse('تم تصميم وتطوير هذا النظام بالكامل بواسطة المهندس إسلام الكومي.');
-      return;
-    }
-
-    // 2. حساب إجمالي عدد الأوردرات وتقسيمها حسب الحالات (بدل الأصفار)
-    if (txt.includes('كم اوردر') || txt.includes('كام اوردر') || txt.includes('عدد الاوردرات') || txt.includes('عدد الطلبات') || txt.includes('عندي كام طلب')) {
-      const total = currentOrders.length;
-      const pending = currentOrders.filter(o => o.status === 'قيد الانتظار').length;
-      const progress = currentOrders.filter(o => o.status === 'شغالين عليهم').length;
-      const ready = currentOrders.filter(o => o.status === 'جاهزين للتسليم').length;
-
-      speakResponse(`لديك حالياً إجمالي ${total} أوردر مسجل. منهم ${pending} قيد الانتظار، و ${progress} شغالين عليهم، و ${ready} جاهزين للتسليم فوراً.`);
-      return;
-    }
-
-    // استخراج اسم العميل بطريقة مرنة
-    let extractedName = '';
-    const words = txt.split(/\s+/);
-    const ignoreList = ['اوردر', 'أوردر', 'بيانات', 'تفاصيل', 'صورة', 'صوره', 'اعرض', 'متبقي', 'باقي', 'فلوس', 'ميعاد', 'تسليم', 'امتى', 'كام', 'عليه', 'تحديث', 'حدث', 'امسح', 'احذف'];
-    const filtered = words.filter(w => !ignoreList.some(ig => w.includes(ig)));
-    if (filtered.length > 0) extractedName = filtered[0];
-
-    const matchedOrder = currentOrders.find(o => o.name.toLowerCase().includes(extractedName) || extractedName.includes(o.name.toLowerCase()));
-
-    // 3. أمر فتح وعرض الصور
-    if (txt.includes('صورة') || txt.includes('صوره') || txt.includes('عرض صوره')) {
-      if (extractedName) {
-        const hasImg = currentImages.some(img => img.clientName.toLowerCase().includes(extractedName));
-        if (hasImg) {
-          setActiveTab('images');
-          setSearchQuery(extractedName);
-          speakResponse(`حاضر يا فنان، فتحت جدول الصور وجاري عرض صورة تصميم العميل ${extractedName}.`);
-          return;
-        }
-      }
-      setActiveTab('images');
-      speakResponse('فتحت لك جدول صور التصاميم المتوفرة بالأتيليه.');
-      return;
-    }
-
-    // 4. أمر مسح الأوردر
-    if (txt.includes('امسح') || txt.includes('احذف')) {
-      if (matchedOrder) {
-        const filteredList = currentOrders.filter(o => o.id !== matchedOrder.id);
-        saveOrdersToLocal(filteredList);
-        speakResponse(`تم بنجاح مسح أوردر العميل ${matchedOrder.name} نهائياً من الدفتر.`, 'success');
-        return;
-      } else {
-        speakResponse(`بحثت عن العميل ${extractedName} لمسحه ولكني لم أجد له أوردر مسجل.`);
-        return;
-      }
-    }
-
-    // 5. أمر التحديث والتعديل تكتيكياً
-    if (txt.includes('حدث') || txt.includes('تحديث') || txt.includes('تعديل')) {
-      if (matchedOrder) {
-        setActiveTab('orders');
-        setSearchQuery(matchedOrder.name);
-        speakResponse(`وجدت أوردر ${matchedOrder.name} بنجاح، يمكنك تعديل الهاتف والميعاد مباشرة من الشاشة الآن.`, 'success');
-        return;
-      }
-    }
-
-    // 6. متبقي عليه كام (حسابات الفلوس)
-    if (txt.includes('متبقي') || txt.includes('باقي') || txt.includes('عليه كام')) {
-      if (matchedOrder) {
-        const remainingMoney = matchedOrder.price - matchedOrder.paid;
-        speakResponse(`العميل ${matchedOrder.name} متبقي عليه مبلغ ${remainingMoney} جنيه من حساب الشغل.`);
-        return;
-      }
-    }
-
-    // 7. ميعاد التسليم والوقت
-    if (txt.includes('ميعاد') || txt.includes('تسليم') || txt.includes('امتى') || txt.includes('وقت')) {
-      if (matchedOrder) {
-        speakResponse(`ميعاد تسليم أوردر ${matchedOrder.name} هو يوم ${matchedOrder.delivery_date} والساعة ${matchedOrder.delivery_time || 'غير محددة بدقة'}.`);
-        return;
-      }
-    }
-
-    // 8. تفاصيل وبيانات الأوردر الشاملة بأي صيغة
-    if (txt.includes('تفاصيل') || txt.includes('بيانات') || txt.includes('اعرض')) {
-      if (matchedOrder) {
-        speakResponse(`إليك تفاصيل أوردر العميل ${matchedOrder.name}: الموديل ${matchedOrder.category}، حسابه ${matchedOrder.price} ج، المدفوع ${matchedOrder.paid} ج، والتسليم في ${matchedOrder.delivery_date}.`);
-        return;
-      }
-    }
-
-    // 9. طلب تسجيل أوردر جديد
-    if (txt.includes('سجل اوردر') || txt.includes('تسجيل اوردر جديد')) {
-      speakResponse('لتسجيل أوردر جديد متكامل، انطق الجملة كاملة مثل: (ضيف أوردر فستان لرانيا هاتف 0100 بسعر 5000 وعربون 2000)');
-      return;
-    }
-
-    // في حال عدم العثور على العميل أو عدم وضوح النية
-    if (extractedName && !matchedOrder) {
-      speakResponse(`بحثت في الدفتر ومقاعد البيانات ولم أجد أوردر مسجل باسم: ${extractedName}.`);
-    } else {
-      speakResponse('أنا سامعك بوضوح يا فنان ومستعد لتنفيذ أي أمر؛ اسألني عن تفاصيل أي عميل أو حسابات الخزنة مباشرة.');
-    }
+  const clearHistory = () => {
+    setMessages([]);
+    window.speechSynthesis?.cancel();
   };
-
-  const speakResponse = (outputText: string, responseType: string = 'text') => {
-    setLastAssistantMessage({ text: outputText, type: responseType });
-    setProcessing(false);
-    const speech = new SpeechSynthesisUtterance(outputText);
-    speech.lang = 'ar-EG';
-    window.speechSynthesis.speak(speech);
-  };
-
-  const totalWallet = orders.reduce((sum, o) => sum + Number(o.paid || 0), 0);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans" dir="rtl">
-      
-      {/* HEADER BAR (مطابق تماماً لتصميمك في الصورة) */}
-      <header className="p-4 bg-slate-900/90 border-b border-slate-800 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/10">
-            <BrainCircuit className="w-5 h-5 text-slate-950" />
-          </div>
-          <div>
-            <h1 className="font-extrabold text-sm text-white">الأفيليه الذكي (Local Stable Mode)</h1>
-            <p className="text-[10px] text-slate-400">آخر رسالة فقط | معالجة فورية بدون تكرار</p>
-          </div>
+    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-180px)]">
+      {/* Voice Interface */}
+      <div className="flex flex-col items-center justify-center py-8 mb-4">
+        <div className="relative">
+          {listening && (
+            <>
+              <div className="absolute inset-0 -m-6 rounded-full bg-amber-500/10 animate-ping" />
+              <div className="absolute inset-0 -m-4 rounded-full bg-amber-500/20 animate-pulse" />
+            </>
+          )}
+          {speaking && (
+            <>
+              <div className="absolute inset-0 -m-6 rounded-full bg-blue-500/10 animate-ping" />
+              <div className="absolute inset-0 -m-4 rounded-full bg-blue-500/20 animate-pulse" />
+            </>
+          )}
+          <button
+            onClick={toggleListening}
+            className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ${
+              listening
+                ? 'bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/40 scale-110'
+                : speaking
+                ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/40'
+                : 'bg-[#1a1a2e] border-2 border-gray-700 hover:border-amber-500/50'
+            }`}
+          >
+            {listening ? (
+              <Mic className="w-8 h-8 text-black" />
+            ) : speaking ? (
+              <Volume2 className="w-8 h-8 text-white animate-pulse" />
+            ) : (
+              <MicOff className="w-8 h-8 text-gray-400" />
+            )}
+          </button>
         </div>
-        <div className="text-left bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-1.5 font-mono text-xs">
-          <span className="text-slate-400 block text-[9px] text-right">الخزنة :</span>
-          <span className="text-emerald-400 font-bold font-mono">{totalWallet} ج</span>
-        </div>
-      </header>
+        <p className="text-gray-400 text-sm mt-4">
+          {listening ? 'جاري الاستماع... تحدث الآن' : speaking ? 'جاري التحدث...' : 'اضغط للبدء في الاستماع'}
+        </p>
 
-      {/* VIEWPORT AREA */}
-      <main className="flex-1 overflow-y-auto p-4 pb-28">
-        
-        {/* شاشة المحادثة النظيفة الفورية */}
-        {activeTab === 'chat' && (
-          <div className="flex flex-col h-full justify-end space-y-4 min-h-[60vh]">
-            {lastUserMessage && (
-              <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl max-w-[85%] self-start">
-                <span className="text-[10px] text-slate-500 font-bold block mb-1">👤 كلامك الأخير الملتقط:</span>
-                <p className="text-sm font-semibold text-slate-200">{lastUserMessage.text}</p>
-              </div>
-            )}
-            
-            {lastAssistantMessage && (
-              <div className={`p-4 rounded-2xl border max-w-[85%] self-end shadow-md ${lastAssistantMessage.type === 'success' ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-100'}`}>
-                <span className="text-[10px] text-slate-500 font-bold block mb-1">🤖 رد المساعد الذكي الفوري:</span>
-                <p className="text-sm font-medium whitespace-pre-line leading-relaxed">{lastAssistantMessage.text}</p>
-              </div>
-            )}
-
-            {processing && (
-              <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" /> جاري تصفير أخطاء السيرفر ومعالجة الصوت محلياً...
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* شاشة الدفتر والأوردرات */}
-        {activeTab === 'orders' && (
-          <div className="space-y-4">
-            <input 
-              type="text" 
-              placeholder="ابحث بالاسم أو الكود..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-slate-700"
-            />
-            <div className="grid gap-3">
-              {orders.filter(o => o.name.includes(searchQuery)).map(o => (
-                <div key={o.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
-                  <div className="flex justify-between mb-2">
-                    <h3 className="font-bold text-sm text-white flex items-center gap-1"><User className="w-3.5 h-3.5" /> {o.name}</h3>
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20">{o.status}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-300 border-t border-slate-800/50 pt-2.5 mt-2">
-                    <div className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {o.delivery_date}</div>
-                    <div className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" /> السعر: {o.price} ج</div>
-                    <div className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> الوقت: {o.delivery_time}</div>
-                    <div className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {o.phone}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* شاشة استوديو وجدول الصور */}
-        {activeTab === 'images' && (
-          <div className="grid grid-cols-2 gap-3">
-            {images.filter(i => i.clientName.includes(searchQuery)).map(img => (
-              <div key={img.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-md">
-                <img src={img.imageUrl} alt="client design" className="w-full h-28 object-cover" />
-                <div className="p-2 text-xs">
-                  <div className="font-bold text-white">العميل: {img.clientName}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{img.designType}</div>
-                </div>
-              </div>
+        {(listening || speaking) && (
+          <div className="flex items-center gap-1 mt-3">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-1 rounded-full transition-all duration-300 ${
+                  listening ? 'bg-amber-500' : 'bg-blue-500'
+                }`}
+                style={{
+                  height: `${8 + Math.random() * 20}px`,
+                  animation: `wave 0.5s ease-in-out ${i * 0.05}s infinite alternate`,
+                }}
+              />
             ))}
           </div>
         )}
-      </main>
-
-      {/* BOTTOM HUD CONTROLLER (المايك وشريط النطق) */}
-      <div className="fixed bottom-14 left-0 right-0 p-3 bg-slate-950/90 backdrop-blur-md border-t border-slate-900 z-40">
-        <div className="max-w-md mx-auto flex items-center justify-between gap-4">
-          <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-            📢 {listening ? 'سامعك يا فنان، اتكلم وعينيا ليك...' : '🎙️ جاري النطق اللغوي الصحيح للتاريخ...'}
-          </span>
-          <button
-            onClick={toggleListening}
-            className={`p-3.5 rounded-full transition-all ${listening ? 'bg-red-600 ring-4 ring-red-500/20' : 'bg-emerald-500 shadow-lg text-slate-950'}`}
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-        </div>
       </div>
 
-      {/* FOOTER NAVBAR TABS */}
-      <nav className="fixed bottom-0 left-0 right-0 h-14 bg-slate-900 border-t border-slate-800 flex justify-around text-xs text-slate-400 z-50">
-        <button onClick={() => setActiveTab('chat')} className={`w-full ${activeTab === 'chat' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><MessageSquare className="w-4 h-4 mx-auto block mb-1" />المساعد الذكي</button>
-        <button onClick={() => setActiveTab('orders')} className={`w-full ${activeTab === 'orders' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><Scissors className="w-4 h-4 mx-auto block mb-1" />الأوردرات</button>
-        <button onClick={() => setActiveTab('images')} className={`w-full ${activeTab === 'images' ? 'text-emerald-400 font-bold bg-slate-950/20' : ''}`}><ImageIcon className="w-4 h-4 mx-auto block mb-1" />جدول الصور</button>
-      </nav>
+      {/* Chat Messages */}
+      <div className="flex-1 overflow-y-auto space-y-3 mb-4 px-1">
+        {messages.length === 0 && (
+          <div className="text-center py-8">
+            <Bot className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+            <p className="text-gray-400">مرحباً! أنا مساعدك الذكي</p>
+            <p className="text-gray-500 text-sm mt-1">تحدث معي أو اكتب أوامرك</p>
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
+          >
+            <div
+              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                msg.role === 'user'
+                  ? 'bg-[#1a1a2e] border border-gray-700 text-white'
+                  : 'bg-gradient-to-l from-amber-500/10 to-amber-600/10 border border-amber-500/20 text-gray-200'
+              }`}
+            >
+              {msg.role === 'assistant' && (
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Bot className="w-4 h-4 text-amber-500" />
+                  <span className="text-amber-500 text-xs font-medium">المساعد</span>
+                </div>
+              )}
+              <p className="text-sm leading-relaxed">{msg.content}</p>
+              <p className="text-gray-600 text-xs mt-1.5">
+                {msg.timestamp.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          </div>
+        ))}
+        {processing && (
+          <div className="flex justify-end">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-amber-500" />
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
+      {/* Input */}
+      <div className="flex items-center gap-2 bg-[#12121a] border border-gray-800 rounded-2xl p-2">
+        <button
+          onClick={toggleListening}
+          className={`p-2.5 rounded-xl transition-all flex-shrink-0 ${
+            listening
+              ? 'bg-amber-500 text-black'
+              : 'text-gray-400 hover:text-amber-500 hover:bg-amber-500/10'
+          }`}
+        >
+          {listening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+        </button>
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
+          placeholder="اكتب رسالتك هنا..."
+          className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none text-sm min-w-0"
+        />
+        <button
+          onClick={clearHistory}
+          className="p-2.5 text-gray-400 hover:text-red-400 rounded-xl hover:bg-red-500/10 transition-all flex-shrink-0"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || processing}
+          className="p-2.5 bg-gradient-to-l from-amber-500 to-amber-600 text-black rounded-xl hover:from-amber-600 hover:to-amber-700 transition-all disabled:opacity-50 flex-shrink-0"
+        >
+          <Send className="w-5 h-5" />
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes wave {
+          0% { height: 8px; }
+          100% { height: 28px; }
+        }
+      `}</style>
     </div>
   );
 }
