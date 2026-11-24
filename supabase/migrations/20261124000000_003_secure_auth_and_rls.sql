@@ -76,7 +76,9 @@ CREATE TABLE IF NOT EXISTS public.track_order_hits (at timestamptz NOT NULL DEFA
 ALTER TABLE public.track_order_hits ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.track_order_hits FROM anon, authenticated;
 
-CREATE OR REPLACE FUNCTION public.track_order(p_code text)
+-- the live database may already have a track_order with another return shape: drop it first
+DROP FUNCTION IF EXISTS public.track_order(text);
+CREATE FUNCTION public.track_order(p_code text)
 RETURNS TABLE (order_code text, customer_name text, status text, image_url text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN

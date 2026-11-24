@@ -6,9 +6,9 @@
   are not in this repo, so this file also removes every existing policy on storage.objects that mentions
   the bucket, then adds operator-only ones.
 
-  What it does NOT change: the bucket stays public-read, because the app shows images through getPublicUrl().
-  Anyone who has an exact image URL can still open that image. Making the bucket private needs signed URLs in
-  the app (a code change). That is a separate decision, see the handoff notes.
+  It also makes the bucket PRIVATE. The app now reads images through short-lived signed URLs (operator only),
+  so old public links stop working after this runs. Deploy the new build first or at the same time.
+  Rows that already store a full public URL keep working: the app extracts the file path from it.
   Rollback: 20261124000003_004_rollback.sql (removes uploads for everyone except the service role; never reopens anon).
 */
 BEGIN;
@@ -34,5 +34,7 @@ CREATE POLICY "operator updates order images" ON storage.objects FOR UPDATE TO a
   USING (bucket_id = 'order-images' AND public.is_operator()) WITH CHECK (bucket_id = 'order-images' AND public.is_operator());
 CREATE POLICY "operator deletes order images" ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id = 'order-images' AND public.is_operator());
+
+UPDATE storage.buckets SET public = false WHERE id = 'order-images';
 
 COMMIT;
