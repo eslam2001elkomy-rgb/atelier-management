@@ -3,9 +3,10 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 import LoginPage from './pages/LoginPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 import Layout from './components/Layout';
+import InstallPrompt from './components/InstallPrompt';
 
 import DashboardPage from './pages/DashboardPage';
 import OrdersPage from './pages/OrdersPage';
@@ -21,13 +22,8 @@ import {
 
 function AppContent() {
 
-  const {
-    user,
-    loading
-  } = useAuth();
+  const { user, loading, recovery } = useAuth();
 
-  const [showForgot, setShowForgot] =
-    useState(false);
 
   const [currentPage, setCurrentPage] =
     useState('dashboard');
@@ -95,26 +91,14 @@ function AppContent() {
     );
   }
 
+  // فتح رابط استعادة كلمة المرور من البريد
+  if (recovery) return <ResetPasswordPage />;
+
   // لو المستخدم مش عامل تسجيل دخول
   if (!user) {
 
-    if (showForgot) {
-
-      return (
-        <ForgotPasswordPage
-          onBack={() =>
-            setShowForgot(false)
-          }
-        />
-      );
-    }
-
     return (
-      <LoginPage
-        onForgotPassword={() =>
-          setShowForgot(true)
-        }
-      />
+      <LoginPage />
     );
   }
 
@@ -171,6 +155,7 @@ function App() {
 
     <AuthProvider>
 
+      <InstallPrompt />
       <AppContent />
 
     </AuthProvider>
