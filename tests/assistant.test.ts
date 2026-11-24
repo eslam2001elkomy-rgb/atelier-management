@@ -134,3 +134,13 @@ test('whatsapp link/message', () => {
   assert.match(buildMessage(o), /17:00/);
   assert.equal(whatsAppLink('', o), null);
 });
+
+import { storagePathOf } from '../src/lib/storagePath';
+test('storage path from stored value', () => {
+  assert.equal(storagePathOf('abc/123.png'), 'abc/123.png');
+  assert.equal(storagePathOf('https://x.supabase.co/storage/v1/object/public/order-images/abc/123.png'), 'abc/123.png');
+  assert.equal(storagePathOf('https://x.supabase.co/storage/v1/object/sign/order-images/a%20b/1.png?token=t'), 'a b/1.png');
+  assert.equal(storagePathOf('data:image/png;base64,AAAA'), null);
+  assert.equal(storagePathOf('https://other.example/pic.png'), null);
+  assert.equal(storagePathOf(''), null);
+});
