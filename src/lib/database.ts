@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { storagePathOf } from './storagePath';
 
 // 1. توليد كود فريد للطلب مكون من 7 أرقام
 export async function generateOrderCode(): Promise<string> {
@@ -134,11 +135,8 @@ export async function deleteOrder(id: string) {
   if (images && images.length > 0) {
     for (const img of images) {
       try {
-        const urlParts = img.image_url.split('/order-images/');
-        if (urlParts.length > 1) {
-          const filePath = urlParts[1];
-          await supabase.storage.from('order-images').remove([filePath]);
-        }
+        const filePath = storagePathOf(img.image_url);
+        if (filePath) await supabase.storage.from('order-images').remove([filePath]);
       } catch (e) {
         console.error('فشل مسح ملف الصورة من الـ Storage:', e);
       }
@@ -152,6 +150,16 @@ export async function deleteOrder(id: string) {
   if (error) throw error;
 }
 
+// رابط صالح لعرض الصورة: data: كما هو، أو رابط موقّع لمدة ساعة (للمشغّل فقط)
+export async function resolveImageUrl(stored: string | null | undefined): Promise<string | null> {
+  if (!stored) return null;
+  const path = storagePathOf(stored);
+  if (!path) return stored;
+  const { data, error } = await supabase.storage.from('order-images').createSignedUrl(path, 3600);
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
 // 8. رفع صورة جديدة للطلب
 export async function uploadOrderImage(orderId: string, file: File) {
   const ext = file.name.split('.').pop();
@@ -163,13 +171,10 @@ export async function uploadOrderImage(orderId: string, file: File) {
 
   if (uploadError) throw uploadError;
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('order-images')
-    .getPublicUrl(fileName);
-
+  // نخزن مسار الملف فقط. الصور خاصة وتُعرض عبر رابط موقّع مؤقت.
   const { data, error } = await supabase
     .from('order_images')
-    .insert({ order_id: orderId, image_url: publicUrl })
+    .insert({ order_id: orderId, image_url: fileName })
     .select()
     .maybeSingle();
   if (error) throw error;
@@ -185,11 +190,8 @@ export async function deleteOrderImage(id: string) {
     .maybeSingle();
 
   if (imgData) {
-    const urlParts = imgData.image_url.split('/order-images/');
-    if (urlParts.length > 1) {
-      const filePath = urlParts[1];
-      await supabase.storage.from('order-images').remove([filePath]);
-    }
+    const filePath = storagePathOf(imgData.image_url);
+    if (filePath) await supabase.storage.from('order-images').remove([filePath]);
   }
 
   const { error } = await supabase
