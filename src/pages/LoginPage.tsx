@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Lock, User, KeyRound, Phone, ShieldCheck, ArrowRight, Scissors, Search, Eye, EyeOff, Package, CheckCircle2, X } from 'lucide-react';
+import { Lock, User, Scissors, Search, Eye, EyeOff, Package, CheckCircle2, X } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -20,15 +20,12 @@ export default function LoginPage() {
   const [orderData, setOrderData] = useState<any | null>(null);
   const [showTrackModal, setShowTrackModal] = useState(false);
 
-  // حالات استعادة كلمة المرور (OTP)
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [resetStep, setResetStep] = useState<'PHONE_INPUT' | 'OTP_INPUT' | 'NEW_PASSWORD_INPUT'>('PHONE_INPUT');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [resetError, setResetError] = useState('');
-  const [resetMessage, setResetMessage] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
+  // استعادة كلمة المرور عبر البريد الإلكتروني (Supabase Auth)
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetErr, setResetErr] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,33 +35,11 @@ export default function LoginPage() {
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
 
-    if (cleanUsername !== 'admin' || cleanPassword !== 'admin000') {
-      setError('اسم المستخدم أو كلمة المرور غير صحيحة');
-      setLoading(false);
-      return;
-    }
-
     try {
-      // 1. تخزين الجلسة في كل مكان ممكن يبحث عنه السيستم لكسر الحماية
-      const adminSession = JSON.stringify({ id: 'admin-id', username: 'admin', role: 'admin' });
-      localStorage.setItem('isAuthenticated', 'true');
-      localStorage.setItem('user_role', 'admin');
-      localStorage.setItem('user', adminSession);
-      localStorage.setItem('sb-access-token', 'mock-token-for-admin'); 
-      sessionStorage.setItem('isAuthenticated', 'true');
-
-      // 2. تفعيل دالة اللوجن الخاصة بالـ Context لو موجودة وتدعم البيانات الثابتة
-      if (login) {
-        await login(cleanUsername, cleanPassword);
-      }
-
-      // 3. توجيه حاد ومباشر لإعادة تحميل التطبيق في الصفحة الرئيسية
-      window.location.href = '/'; 
-
-    } catch (err: any) {
-      // كسر حماية المسارات حتى لو حدث خطأ في سياق الـ React
-      localStorage.setItem('isAuthenticated', 'true');
-      window.location.href = '/';
+      const ok = await login(cleanUsername, cleanPassword);
+      if (!ok) setError('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    } catch {
+      setError('تعذر الاتصال. حاول مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -80,11 +55,9 @@ export default function LoginPage() {
     setOrderData(null);
 
     try {
-      const { data, error } = await supabase
-        .from('orders') 
-        .select('*')
-        .eq('order_code', code)
-        .single();
+      // دالة آمنة تُرجع الاسم والحالة والصورة فقط لهذا الكود (لا قراءة مباشرة لجدول الطلبات)
+      const { data: rows, error } = await supabase.rpc('track_order', { p_code: code });
+      const data = Array.isArray(rows) ? rows[0] : rows;
 
       if (error || !data) {
         setTrackError('لم أجد أي أوردر مطابق بالكود المذكور في السيستم.');
@@ -99,71 +72,20 @@ export default function LoginPage() {
     }
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSendReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    setResetError('');
-    setResetMessage('');
-    setResetLoading(true);
-
-    let formattedPhone = phoneNumber.trim();
-    if (formattedPhone.startsWith('01')) {
-      formattedPhone = '+20' + formattedPhone.substring(1);
-    }
-
+    setResetErr('');
+    setResetMsg('');
+    setResetBusy(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), { redirectTo: window.location.origin });
       if (error) throw error;
-      setResetMessage('تم إرسال كود التأكيد المكون من 6 أرقام إلى هاتفك بنجاح.');
-      setResetStep('OTP_INPUT');
-    } catch (err: any) {
-      setResetError(err.message || 'فشل إرسال الرسالة، تأكد من تفعيل خدمة الـ SMS');
+      // رسالة واحدة دائمًا حتى لا نكشف هل البريد مسجل أم لا
+      setResetMsg('لو البريد ده مسجل، هتوصلك رسالة فيها رابط لتغيير كلمة المرور.');
+    } catch {
+      setResetErr('تعذر إرسال الرسالة الآن. حاول بعد قليل.');
     } finally {
-      setResetLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResetError('');
-    setResetMessage('');
-    setResetLoading(true);
-
-    let formattedPhone = phoneNumber.trim();
-    if (formattedPhone.startsWith('01')) {
-      formattedPhone = '+20' + formattedPhone.substring(1);
-    }
-
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        phone: formattedPhone,
-        token: otpCode,
-        type: 'sms',
-      });
-      if (error) throw error;
-      setResetMessage('تم التحقق بنجاح! اكتب الباسورد الجديد للاستبدال.');
-      setResetStep('NEW_PASSWORD_INPUT');
-    } catch (err: any) {
-      setResetError('الكود غير صحيح أو انتهت صلاحيته.');
-    } finally {
-      setResetLoading(false);
-    }
-  };
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResetError('');
-    setResetMessage('');
-    setResetLoading(true);
-
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword.trim() });
-      if (error) throw error;
-      setResetMessage('تم تحديث كلمة المرور بنجاح!');
-      setTimeout(() => { setShowResetModal(false); setResetStep('PHONE_INPUT'); }, 2500);
-    } catch (err: any) {
-      setResetError(err.message || 'حدث خطأ أثناء حفظ كلمة المرور الجديدة.');
-    } finally {
-      setLoading(false);
+      setResetBusy(false);
     }
   };
 
@@ -189,14 +111,14 @@ export default function LoginPage() {
 
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
-              <label className="text-xs text-gray-400 font-bold block mb-1.5 mr-1">اسم المستخدم</label>
+              <label className="text-xs text-gray-400 font-bold block mb-1.5 mr-1">البريد الإلكتروني</label>
               <div className="relative">
                 <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input 
                   type="text" 
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin" 
+                  placeholder="name@example.com" 
                   className="w-full bg-[#090912] border border-gray-800/80 rounded-xl py-3 pr-11 pl-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 transition-all text-right"
                   required
                 />
@@ -244,10 +166,11 @@ export default function LoginPage() {
 
           <div className="text-center mt-3">
             <button 
-              onClick={() => { setShowResetModal(true); setResetError(''); setResetMessage(''); }}
+              type="button"
+              onClick={() => { setShowReset(true); setResetErr(''); setResetMsg(''); }}
               className="text-[11px] font-bold text-amber-500/70 hover:text-amber-400 transition-colors underline decoration-dotted"
             >
-              نسيت كلمة المرور؟ استعادة عبر الموبايل
+              نسيت كلمة المرور؟
             </button>
           </div>
         </div>
@@ -338,51 +261,27 @@ export default function LoginPage() {
       )}
 
       {/* نافذة الـ OTP المنبثقة */}
-      {showResetModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#05050b] border border-gray-800 rounded-3xl p-6 shadow-2xl relative">
-            <div className="flex items-center gap-2 mb-4 border-b border-gray-900 pb-3">
-              <KeyRound className="w-5 h-5 text-amber-500" />
-              <h3 className="text-sm font-black text-white">استعادة الحساب</h3>
-            </div>
-
-            {resetError && <div className="mb-4 bg-rose-950/40 border border-rose-900/50 rounded-xl p-3 text-xs font-bold text-rose-400 text-center">{resetError}</div>}
-            {resetMessage && <div className="mb-4 bg-emerald-950/40 border border-emerald-900/50 rounded-xl p-3 text-xs font-bold text-emerald-400 text-center">{resetMessage}</div>}
-
-            {resetStep === 'PHONE_INPUT' && (
-              <form onSubmit={handleSendOtp} className="space-y-4">
-                <p className="text-xs text-gray-400">أدخل رقم الهاتف المسجل لإرسال كود الـ OTP:</p>
-                <div className="relative">
-                  <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input type="tel" placeholder="0123456789" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-sm text-white text-left font-mono" required />
-                </div>
-                <button type="submit" className="w-full bg-amber-500 text-black font-black text-xs py-3 rounded-xl flex items-center justify-center gap-1">إرسال كود الـ 6 أرقام</button>
-              </form>
-            )}
-
-            {resetStep === 'OTP_INPUT' && (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <p className="text-xs text-gray-400">أدخل الرمز المكون من 6 أرقام المستلم:</p>
-                <div className="relative">
-                  <ShieldCheck className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input type="text" maxLength={6} placeholder="123456" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-center tracking-[1em] text-sm text-amber-500 font-mono focus:outline-none" required />
-                </div>
-                <button type="submit" className="w-full bg-emerald-600 text-white font-black text-xs py-3 rounded-xl">تأكيد الرمز وبدء التغيير</button>
-              </form>
-            )}
-
-            {resetStep === 'NEW_PASSWORD_INPUT' && (
-              <form onSubmit={handleUpdatePassword} className="space-y-4">
-                <p className="text-xs text-gray-400">اكتب كلمة المرور الجديدة:</p>
-                <div className="relative">
-                  <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input type="password" placeholder="اكتب الباسورد الجديد" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 pr-11 pl-4 text-sm text-white text-right" required />
-                </div>
-                <button type="submit" className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs py-3 rounded-xl">حفظ كلمة المرور الجديدة</button>
-              </form>
-            )}
-
-            <button onClick={() => setShowResetModal(false)} className="w-full mt-4 text-[11px] font-bold text-gray-600 text-center block pt-2 border-t border-gray-900">إلغاء والعودة</button>
+      {showReset && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" dir="rtl">
+          <div className="w-full max-w-sm bg-[#05050b] border border-gray-900 rounded-3xl p-6 space-y-4">
+            <h3 className="text-sm font-black text-gray-200 text-center">استعادة كلمة المرور</h3>
+            <form onSubmit={handleSendReset} className="space-y-3">
+              <input
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="البريد الإلكتروني المسجل"
+                className="w-full bg-[#090912] border border-gray-800 rounded-xl py-3 px-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500 text-left"
+                dir="ltr"
+              />
+              {resetMsg && <p className="text-xs text-emerald-400 text-center">{resetMsg}</p>}
+              {resetErr && <p className="text-xs text-rose-400 text-center">{resetErr}</p>}
+              <button type="submit" disabled={resetBusy} className="w-full bg-amber-500 text-black font-bold text-sm py-3 rounded-xl disabled:opacity-50">
+                {resetBusy ? 'جاري الإرسال...' : 'إرسال رابط الاستعادة'}
+              </button>
+            </form>
+            <button onClick={() => setShowReset(false)} className="w-full text-[11px] font-bold text-gray-500 pt-2 border-t border-gray-900">إغلاق</button>
           </div>
         </div>
       )}

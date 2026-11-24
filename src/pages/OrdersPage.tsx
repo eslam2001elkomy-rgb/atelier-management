@@ -1,12 +1,9 @@
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js'; 
-import { Plus, Search, CreditCard as Edit3, Trash2, X, Image as ImageIcon, Calendar, Clock, Filter, Eye, Upload } from 'lucide-react';
+import { supabase as fallbackClient } from '../lib/supabase';
+import { Plus, Search, CreditCard as Edit3, Trash2, X, Image as ImageIcon, Calendar, Clock, Filter, Eye, Upload, MessageCircle } from 'lucide-react';
+import { whatsAppLink } from '../lib/whatsapp';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ezdirycgbnkxxymmyagh.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-const fallbackClient = createClient(supabaseUrl, supabaseAnonKey);
 
 const statusOptions = [
   { value: 'pending', label: 'قيد الانتظار', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
@@ -276,6 +273,18 @@ export default function OrdersPage() {
                 {/* تعديل العملة إلى ج.م */}
                 <span className="text-amber-500 font-bold">{order.price ? Number(order.price).toLocaleString() : 0} <span className="text-xs text-gray-500">ج.م</span></span>
                 <div className="flex items-center gap-1">
+                  {whatsAppLink(order.phone, order) ? (
+                    <a
+                      href={whatsAppLink(order.phone, order)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="فتح واتساب برسالة جاهزة (تراجعها وترسلها بنفسك)"
+                      aria-label="مراسلة العميل على واتساب"
+                      className="p-2 text-gray-400 hover:text-emerald-400 rounded-lg hover:bg-emerald-500/10 transition-all"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                    </a>
+                  ) : null}
                   <button onClick={() => setViewOrder(order)} className="p-2 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-500/10 transition-all">
                     <Eye className="w-4 h-4" />
                   </button>

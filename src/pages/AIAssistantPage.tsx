@@ -6,17 +6,21 @@ import {
   updateOrder,
   deleteOrder,
   generateOrderCode,
-  fetchOrderStats,
   saveConversation,
   fetchConversations,
 } from '../lib/database';
-import { Bot, Mic, MicOff, Send, Trash2, Volume2 } from 'lucide-react';
+import { handle, type Pending, type Action } from '../lib/assistantEngine';
+import { STATUS_LABELS } from '../lib/assistant';
+import { Bot, Mic, Send, Volume2, VolumeX } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const WELCOME = 'أهلاً بك! اسألني عن الطلبات أو قولي أضيف أو أعدل طلب. اكتب "مساعدة" للأمثلة.';
 
 export default function AIAssistantPage() {
   const { user } = useAuth();
@@ -25,122 +29,211 @@ export default function AIAssistantPage() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const listeningRef = useRef(false);
   const ordersRef = useRef<any[]>([]);
+  const pendingRef = useRef<Pending | null>(null);
+  const voiceOnRef = useRef(false);
+  const busyRef = useRef(false);
 
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => { voiceOnRef.current = voiceOn; }, [voiceOn]);
+  useEffect(() => { const el = chatBoxRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [messages]);
+
+  const loadOrders = async () => {
+    try {
+      const data = await fetchOrders();
+      ordersRef.current = data || [];
+      setOrdersLoaded(true);
+      return true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
 
   useEffect(() => {
-    loadOrders();
-    loadHistory();
-    // رسالة ترحيبية فورية
-    const welcome = "أهلاً بك! أنا مساعدك الذكي، كيف يمكنني مساعدتك في إدارة طلبات الأتيليه اليوم؟";
-    addMessage('assistant', welcome);
-    speak(welcome);
-    
+    (async () => {
+      const ok = await loadOrders();
+      let history: Message[] = [];
+      if (user && UUID_RE.test(user.id)) {
+        try {
+          const data = await fetchConversations(user.id);
+          (data || []).slice(0, 10).reverse().forEach((c: any) => {
+            history.push({ role: 'user', content: c.user_message, timestamp: new Date(c.created_at) });
+            history.push({ role: 'assistant', content: c.assistant_response, timestamp: new Date(c.created_at) });
+          });
+        } catch (err) { console.error(err); }
+      }
+      setMessages([
+        ...history,
+        { role: 'assistant', content: ok ? WELCOME : 'تعذر تحميل الطلبات حاليًا. تأكد من الاتصال ثم أعد فتح الصفحة.', timestamp: new Date() },
+      ]);
+    })();
     return () => {
       stopListening();
       window.speechSynthesis?.cancel();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); };
-  const loadOrders = async () => { try { const data = await fetchOrders(); setOrders(data || []); } catch (err) { console.error(err); } };
-  const loadHistory = async () => {
-    if (!user) return;
-    try {
-      const data = await fetchConversations(user.id);
-      if (data && data.length > 0) {
-        const historyMsgs: Message[] = [];
-        data.slice(0, 10).reverse().forEach((c: any) => {
-          historyMsgs.push({ role: 'user', content: c.user_message, timestamp: new Date(c.created_at) });
-          historyMsgs.push({ role: 'assistant', content: c.assistant_response, timestamp: new Date(c.created_at) });
-        });
-        setMessages(historyMsgs);
-      }
-    } catch (err) { console.error(err); }
-  };
 
   const speak = (text: string) => {
     const synth = window.speechSynthesis;
-    if (!synth) return;
+    if (!synth || !voiceOnRef.current) return;
     synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-SA';
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => { setSpeaking(false); };
-    synth.speak(utterance);
+    const u = new SpeechSynthesisUtterance(text.replace(/\n/g, '. '));
+    u.lang = 'ar-SA';
+    u.onstart = () => setSpeaking(true);
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    synth.speak(u);
   };
 
-  const addMessage = (role: 'user' | 'assistant', content: string) => { setMessages(prev => [...prev, { role, content, timestamp: new Date() }]); };
+  const addMessage = (role: 'user' | 'assistant', content: string) =>
+    setMessages((prev) => [...prev, { role, content, timestamp: new Date() }]);
 
-  const processCommand = async (text: string): Promise<string> => {
-    // هذه هي الدالة الأصلية الخاصة بك كما هي تماماً
-    const lower = text.trim().toLowerCase();
-    const currentOrders = ordersRef.current;
-    if (lower.includes('أضف')) { /* منطقك الأصلي */ return "تمت الإضافة"; }
-    return 'مرحباً! أنا مساعدك الذكي.';
+  const runAction = async (a: Action): Promise<string> => {
+    try {
+      if (a.kind === 'add') {
+        const code = await generateOrderCode();
+        await createOrder({
+          order_code: code,
+          customer_name: a.data.name,
+          phone: a.data.phone,
+          delivery_date: a.data.date,
+          delivery_time: a.data.time,
+          price: a.data.price,
+          notes: a.data.notes,
+          status: 'pending',
+        });
+        await loadOrders();
+        return `تمت إضافة الطلب باسم ${a.data.name}، الكود ${code}.`;
+      }
+      if (a.kind === 'status') {
+        await updateOrder(a.id, { status: a.status });
+        await loadOrders();
+        return `تم تغيير حالة الطلب #${a.code} (${a.name}) إلى ${STATUS_LABELS[a.status]}.`;
+      }
+      await deleteOrder(a.id);
+      await loadOrders();
+      return `تم حذف الطلب #${a.code} (${a.name}).`;
+    } catch (err) {
+      console.error(err);
+      return 'حصل خطأ ولم تتم العملية. لم يتغير شيء. حاول مرة أخرى.';
+    }
   };
 
-  const handleUserMessage = async (text: string) => {
+  const handleUserMessage = async (raw: string) => {
+    const text = raw.trim();
+    if (!text || busyRef.current) return;
+    busyRef.current = true;
     addMessage('user', text);
     setProcessing(true);
     try {
-      const response = await processCommand(text);
-      addMessage('assistant', response);
-      speak(response);
-      if (user) await saveConversation({ user_id: user.id, user_message: text, assistant_response: response });
-    } catch (err) { console.error(err); } finally { setProcessing(false); }
+      await loadOrders();
+      const res = handle(text, ordersRef.current, pendingRef.current, new Date());
+      pendingRef.current = res.pending;
+      let reply = res.reply;
+      if (res.action) reply = await runAction(res.action);
+      addMessage('assistant', reply);
+      speak(reply);
+      if (user && UUID_RE.test(user.id)) {
+        try { await saveConversation({ user_id: user.id, user_message: text, assistant_response: reply }); }
+        catch (err) { console.error(err); }
+      }
+    } finally {
+      busyRef.current = false;
+      setProcessing(false);
+    }
   };
 
-  const stopListening = () => { listeningRef.current = false; if (recognitionRef.current) recognitionRef.current.abort(); setListening(false); };
+  const send = () => {
+    const t = input;
+    setInput('');
+    handleUserMessage(t);
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch { /* */ } }
+    recognitionRef.current = null;
+    setListening(false);
+  };
 
   const startListening = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ar-SA';
-    recognition.continuous = true;
-    recognition.onresult = (e: any) => { const transcript = e.results[e.results.length - 1][0].transcript; handleUserMessage(transcript); };
-    recognitionRef.current = recognition;
-    listeningRef.current = true;
-    recognition.start();
-    setListening(true);
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      addMessage('assistant', 'المتصفح ده مش بيدعم الكتابة بالصوت. اكتب الأمر في الخانة تحت.');
+      return;
+    }
+    const r = new SR();
+    r.lang = 'ar-EG';
+    r.continuous = false; // جملة واحدة في كل مرة
+    r.interimResults = false;
+    r.onresult = (e: any) => {
+      const t = e.results[e.results.length - 1][0].transcript;
+      handleUserMessage(t);
+    };
+    r.onerror = () => setListening(false);
+    r.onend = () => setListening(false);
+    recognitionRef.current = r;
+    try { r.start(); setListening(true); } catch { setListening(false); }
+  };
+
+  const toggleVoice = () => {
+    if (voiceOn) window.speechSynthesis?.cancel();
+    setVoiceOn(!voiceOn);
+    setSpeaking(false);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0f0f12] text-white">
-      {/* الديزاين الجديد: المساعد في منتصف الشاشة مع تموجات */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        <div className="relative cursor-pointer" onClick={() => listening ? stopListening() : startListening()}>
-          {/* التموجات (Animations) */}
-          {(listening || speaking) && (
-            <>
-              <div className="absolute inset-0 rounded-full bg-amber-500 animate-ping opacity-60 scale-150" />
-              <div className="absolute inset-0 rounded-full bg-amber-500 animate-pulse opacity-40 scale-125" />
-            </>
-          )}
-          <div className={`relative z-10 w-36 h-36 rounded-full flex items-center justify-center border-4 border-amber-500/20 bg-[#1a1a2e] transition-all ${listening ? 'shadow-[0_0_50px_rgba(245,158,11,0.5)]' : ''}`}>
-            {listening ? <Mic className="w-16 h-16 text-amber-500" /> : <Bot className="w-16 h-16 text-amber-500" />}
+    <div className="flex flex-col h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-9rem)] min-h-[320px] bg-[#0f0f12] text-white">
+      {/* رأس صغير */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-[#12121a]">
+        <div className="flex items-center gap-2">
+          <div className={`w-9 h-9 rounded-full bg-[#1a1a2e] border border-amber-500/30 flex items-center justify-center ${processing || speaking ? 'animate-pulse' : ''}`}>
+            <Bot className="w-5 h-5 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">المساعد</p>
+            <p className="text-xs text-gray-500">{processing ? 'بفكر...' : listening ? 'أنا أسمعك...' : ordersLoaded ? 'جاهز' : 'جاري التحميل'}</p>
           </div>
         </div>
-        <p className="mt-8 text-lg font-semibold text-amber-500 animate-pulse">
-           {listening ? 'أنا أسمعك الآن...' : 'اضغط على المساعد للبدء'}
-        </p>
+        <button onClick={toggleVoice} aria-label="قراءة الردود بصوت عالٍ" className={`p-2 rounded-lg border ${voiceOn ? 'border-amber-500/50 text-amber-500' : 'border-gray-700 text-gray-500'}`}>
+          {voiceOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+        </button>
       </div>
 
-      {/* منطقة الشات في الأسفل */}
-      <div className="h-1/3 w-full bg-[#12121a] border-t border-gray-800 p-4 overflow-y-auto">
+      {/* المحادثة */}
+      <div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m, i) => (
-          <div key={i} className={`mb-3 p-3 rounded-xl max-w-[80%] ${m.role === 'user' ? 'bg-amber-500/10 ml-auto' : 'bg-gray-800 mr-auto'}`}>
+          <div key={i} className={`p-3 rounded-2xl max-w-[88%] whitespace-pre-line text-sm leading-relaxed ${m.role === 'user' ? 'bg-amber-500/15 mr-0 ml-auto' : 'bg-gray-800 ml-0 mr-auto'}`}>
             {m.content}
           </div>
         ))}
         <div ref={messagesEndRef} />
+      </div>
+
+      {/* الإدخال */}
+      <div className="p-3 border-t border-gray-800 bg-[#12121a] flex items-center gap-2">
+        <button
+          onClick={() => (listening ? stopListening() : startListening())}
+          aria-label="تحدث"
+          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center border ${listening ? 'bg-amber-500 text-black border-amber-500 animate-pulse' : 'border-amber-500/40 text-amber-500'}`}
+        >
+          <Mic className="w-5 h-5" />
+        </button>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+          placeholder="اكتب أمرك هنا..."
+          className="flex-1 bg-[#1a1a2e] border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50"
+        />
+        <button onClick={send} disabled={processing || !input.trim()} aria-label="إرسال" className="w-11 h-11 shrink-0 rounded-full bg-amber-500 text-black flex items-center justify-center disabled:opacity-40">
+          <Send className="w-5 h-5 -scale-x-100" />
+        </button>
       </div>
     </div>
   );

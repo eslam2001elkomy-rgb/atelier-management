@@ -105,7 +105,7 @@ export default function CustomersPage() {
                   <span>{getOrderCount(customer.id)} طلب</span>
                 </div>
                 <div className="text-amber-500 text-sm font-bold">
-                  {getTotalSpent(customer.id).toLocaleString()} ر.س
+                  {getTotalSpent(customer.id).toLocaleString()} ج.م
                 </div>
               </div>
             </div>

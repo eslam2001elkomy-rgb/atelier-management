@@ -79,14 +79,14 @@ export default function ReportsPage() {
             <DollarSign className="w-5 h-5 text-amber-500" />
             <span className="text-gray-400 text-sm">إجمالي الإيرادات</span>
           </div>
-          <p className="text-2xl font-bold text-white">{totalRevenue.toLocaleString()} <span className="text-sm text-gray-500">ر.س</span></p>
+          <p className="text-2xl font-bold text-white">{totalRevenue.toLocaleString()} <span className="text-sm text-gray-500">ج.م</span></p>
         </div>
         <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-blue-400" />
             <span className="text-gray-400 text-sm">متوسط السعر</span>
           </div>
-          <p className="text-2xl font-bold text-white">{avgPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-sm text-gray-500">ر.س</span></p>
+          <p className="text-2xl font-bold text-white">{avgPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-sm text-gray-500">ج.م</span></p>
         </div>
         <div className="bg-[#12121a] border border-gray-800 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
