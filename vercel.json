@@ -1,0 +1,7 @@
+{
+  "git": {
+    "deploymentEnabled": {
+      "review-local-fixes": false
+    }
+  }
+}
