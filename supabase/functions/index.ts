@@ -44,12 +44,8 @@ Deno.serve(async (req: Request) => {
 
       if (existing) continue;
 
-      const { data: users } = await supabase
-        .from("users")
-        .select("id, phone")
-        .limit(1);
-
-      const userId = users?.[0]?.id;
+      const { data: authUsers } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1 });
+      const userId = authUsers?.users?.[0]?.id;
       if (!userId) continue;
 
       const deliveryInfo = order.delivery_time
